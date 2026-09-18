@@ -1,5 +1,5 @@
 {
-  "name": "@scopus/scopus-client",
+  "name": "@openalex/openalex-client",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -17,7 +17,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@scopus/shared": "workspace:*",
-    "fast-xml-parser": "^4.5.1"
+    "@openalex/shared": "workspace:*"
   }
 }

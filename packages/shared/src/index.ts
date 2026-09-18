@@ -1,17 +1,12 @@
-export type HydrationStatus = 'complete' | 'unavailable' | 'failed';
-
-export interface ScopusAuthor {
+export interface WorkAuthor {
+  id?: string;
   name?: string;
-  givenName?: string;
-  surname?: string;
-  initials?: string;
-  authorId?: string;
   orcid?: string;
   affiliations: string[];
   raw?: Record<string, unknown>;
 }
 
-export interface ScopusAffiliation {
+export interface WorkAffiliation {
   id?: string;
   name?: string;
   city?: string;
@@ -19,14 +14,13 @@ export interface ScopusAffiliation {
   raw?: Record<string, unknown>;
 }
 
-export interface ScopusResult {
+export interface WorkResult {
   rank: number;
-  scopusId?: string;
-  eid?: string;
+  openAlexId?: string;
   title?: string;
   abstract?: string;
-  authors: ScopusAuthor[];
-  affiliations: ScopusAffiliation[];
+  authors: WorkAuthor[];
+  affiliations: WorkAffiliation[];
   publication: {
     name?: string;
     volume?: string;
@@ -40,13 +34,11 @@ export interface ScopusResult {
   };
   identifiers: {
     doi?: string;
-    pii?: string;
     pubmedId?: string;
-    piiOrPui?: string;
+    pmcid?: string;
   };
   metrics: {
     citedByCount?: number;
-    citationCount?: number;
   };
   access: {
     openAccess?: boolean;
@@ -54,22 +46,17 @@ export interface ScopusResult {
     license?: string;
   };
   links: Record<string, string>;
-  hydration: {
-    status: HydrationStatus;
-    error?: string;
-  };
   searchMetadata: Record<string, unknown>;
-  abstractMetadata?: Record<string, unknown>;
 }
 
 export interface QuotaInfo {
   limit?: number;
   remaining?: number;
   resetAt?: string;
+  creditsUsed?: number;
 }
 
 export interface SearchError {
-  rank?: number;
   code: string;
   message: string;
 }
@@ -79,9 +66,7 @@ export interface SearchResponse {
   requestedLimit: number;
   totalResults: number;
   returnedResults: number;
-  hydratedResults: number;
-  failedResults: number;
-  results: ScopusResult[];
+  results: WorkResult[];
   errors: SearchError[];
   quota?: QuotaInfo;
 }

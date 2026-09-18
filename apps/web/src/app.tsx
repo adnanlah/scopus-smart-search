@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState, type FormEvent } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { AlertCircle, AlertTriangle, ArrowRight, Search, Sparkles } from 'lucide-react';
-import { ApiError, searchPapers, type HydrationSummary } from '@/lib/api';
+import { AlertCircle, ArrowRight, Search, Sparkles } from 'lucide-react';
+import { ApiError, searchPapers } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,28 +13,9 @@ import { PaperRowSkeleton } from '@/components/paper-row-skeleton';
 const resultLimitOptions = [10, 25, 50, 100];
 
 const getErrorMessage = (error: Error) => {
-  if (error instanceof ApiError && error.status === 429) return 'Scopus is rate limiting requests. Please wait a moment and try again.';
+  if (error instanceof ApiError && error.status === 429) return 'OpenAlex is rate limiting requests. Please wait a moment and try again.';
   if (error instanceof ApiError && error.status >= 500) return 'The search service is temporarily unavailable. Please try again.';
   return error.message;
-};
-const getHydrationNotice = (hydration: HydrationSummary) => {
-  const count = `${hydration.failed} ${hydration.failed === 1 ? 'abstract' : 'abstracts'}`;
-  if (hydration.issue?.kind === 'access') {
-    return {
-      title: 'Abstract access is unavailable.',
-      description: `Scopus rejected access to ${count}. Check that your API key and institution entitlement include Abstract Retrieval. The available search results are still shown.`,
-    };
-  }
-  if (hydration.issue?.kind === 'rate-limit') {
-    return {
-      title: 'Abstract retrieval is temporarily rate limited.',
-      description: `Scopus could not load ${count} right now. The available search results are still shown; try again later for abstracts.`,
-    };
-  }
-  return {
-    title: 'Some abstracts could not be loaded.',
-    description: `${count} could not be retrieved, but the available search results are still shown.`,
-  };
 };
 
 export const App = () => {
@@ -62,8 +43,6 @@ export const App = () => {
     return `${searchQuery.data.totalResults.toLocaleString()} ${paperLabel} · ${searchQuery.data.returnedResults} shown`;
   }, [searchQuery.data]);
 
-  const hydrationNotice = searchQuery.data && !searchQuery.isPlaceholderData && searchQuery.data.hydration.failed > 0 ? getHydrationNotice(searchQuery.data.hydration) : undefined;
-
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextQuery = query.trim();
@@ -85,7 +64,7 @@ export const App = () => {
   };
 
   const statusText = searchQuery.isPending
-    ? 'Searching Scopus for papers.'
+    ? 'Searching OpenAlex for papers.'
     : searchQuery.isError
       ? `Search failed. ${getErrorMessage(searchQuery.error)}`
       : searchQuery.data?.papers.length === 0
@@ -103,13 +82,13 @@ export const App = () => {
               <Sparkles className="h-4 w-4" aria-hidden="true" />
             </span>
             <span>
-              <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-primary">Scopus Smart Search</span>
+              <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-primary">OpenAlex Smart Search</span>
               <span className="block text-xs text-muted-foreground">Enriched literature search</span>
             </span>
           </div>
           <div className="space-y-3">
             <h1 className="text-3xl font-semibold tracking-[-0.03em] sm:text-5xl">A clearer way to search the literature.</h1>
-            <p className="mx-auto max-w-2xl text-sm leading-7 text-muted-foreground sm:text-base">Find relevant Scopus papers, then scan the context that helps you decide what to read next.</p>
+            <p className="mx-auto max-w-2xl text-sm leading-7 text-muted-foreground sm:text-base">Find relevant OpenAlex works, then scan the context that helps you decide what to read next.</p>
           </div>
         </header>
 
@@ -195,15 +174,6 @@ export const App = () => {
               </Alert>
             )}
 
-            {hydrationNotice && (
-              <Alert className="flex items-start gap-3 border-amber-200 bg-amber-50/70 p-4 text-amber-950">
-                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
-                <div className="min-w-0">
-                  <AlertTitle>{hydrationNotice.title}</AlertTitle>
-                  <AlertDescription className="text-amber-900">{hydrationNotice.description}</AlertDescription>
-                </div>
-              </Alert>
-            )}
             {searchQuery.isSuccess && !searchQuery.isPlaceholderData && searchQuery.data.papers.length === 0 && (
               <div className="rounded-2xl border border-dashed bg-card px-6 py-12 text-center">
                 <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground"><Search className="h-5 w-5" aria-hidden="true" /></span>

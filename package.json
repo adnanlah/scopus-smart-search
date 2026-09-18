@@ -1,5 +1,5 @@
 {
-  "name": "scopus-smart-search",
+  "name": "openalex-smart-search",
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@9.15.5",
@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "dev": "pnpm --filter @scopus/shared build && pnpm --filter @scopus/scopus-client build && pnpm --filter @scopus/api dev",
+    "dev": "pnpm --filter @openalex/shared build && pnpm --filter @openalex/openalex-client build && pnpm --filter @openalex/api dev",
     "test": "pnpm build && pnpm -r test",
     "typecheck": "pnpm build && pnpm -r typecheck"
   },

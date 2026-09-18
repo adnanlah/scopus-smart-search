@@ -1,5 +1,5 @@
 {
-  "name": "@scopus/web",
+  "name": "@openalex/web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@scopus/shared": "workspace:*",
+    "@openalex/shared": "workspace:*",
     "@tanstack/react-query": "^5.66.8",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

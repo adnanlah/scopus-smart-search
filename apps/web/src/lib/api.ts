@@ -1,21 +1,8 @@
-import type { ScopusResult, SearchError, SearchResponse } from '@scopus/shared';
+import type { SearchError, SearchResponse, WorkResult } from '@openalex/shared';
 
 export interface SearchParams {
   query: string;
   limit: number;
-}
-
-export type HydrationIssueKind = 'access' | 'rate-limit' | 'other';
-
-export interface HydrationSummary {
-  requested: number;
-  hydrated: number;
-  failed: number;
-  issue?: {
-    kind: HydrationIssueKind;
-    code: string;
-    message: string;
-  };
 }
 
 export interface Paper {
@@ -31,17 +18,13 @@ export interface Paper {
   externalUrl?: string;
   citedByCount?: number;
   openAccess: boolean;
-  hydrationStatus: ScopusResult['hydration']['status'];
 }
 
 export interface PaperSearchResult {
   query: string;
   totalResults: number;
   returnedResults: number;
-  hydratedResults: number;
-  failedResults: number;
   searchErrors: SearchError[];
-  hydration: HydrationSummary;
   papers: Paper[];
 }
 
@@ -64,62 +47,39 @@ const cleanAuthorName = (value: unknown): string | undefined => {
   return name || undefined;
 };
 
-const rawAuthorName = (raw: Record<string, unknown> | undefined): string | undefined => {
-  if (!raw) return undefined;
-  const directName = [raw.authname, raw.name, raw['ce:indexed-name'], raw.indexedName, raw['dc:creator']]
-    .map(cleanAuthorName)
-    .find(Boolean);
-  if (directName) return directName;
-  const preferred = raw['preferred-name'] ?? raw['ce:preferred-name'];
-  if (preferred && typeof preferred === 'object' && !Array.isArray(preferred)) {
-    const preferredRecord = preferred as Record<string, unknown>;
-    return [preferredRecord['given-name'], preferredRecord.surname, preferredRecord.initials]
-      .map(cleanAuthorName)
-      .filter(Boolean)
-      .join(' ') || undefined;
-  }
-  return undefined;
-};
-
-const getAuthorNames = (result: ScopusResult): string[] => {
-  const names = result.authors
-    .map((author) => {
-      const fromParts = [author.givenName, author.surname].filter(Boolean).join(' ');
-      return cleanAuthorName(author.name) ?? cleanAuthorName(fromParts) ?? rawAuthorName(author.raw);
-    })
-    .map(cleanAuthorName)
+const getAuthorNames = (result: WorkResult): string[] =>
+  result.authors
+    .map((author) => cleanAuthorName(author.name))
     .filter((author): author is string => Boolean(author));
-  if (names.length > 0) return [...new Set(names)];
 
-  const creator = result.searchMetadata['dc:creator'] ?? result.searchMetadata.creator;
-  if (typeof creator === 'string') return [creator.trim()].filter(Boolean);
-  return [];
-};
-
-const getPublicPaperUrl = (result: ScopusResult): string | undefined => {
-  const candidates = [result.links.scopus, result.links.record, result.links['paper']];
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    try {
-      const url = new URL(candidate);
-      const hostname = url.hostname.toLowerCase();
-      if (hostname === 'scopus.com' || hostname.endsWith('.scopus.com')) return candidate;
-    } catch {
-      // Ignore malformed backend links and continue to the next candidate.
-    }
+const isAllowedExternalUrl = (candidate: string, kind: string): boolean => {
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== 'https:') return false;
+    const hostname = url.hostname.toLowerCase();
+    if (kind === 'openalex') return hostname === 'openalex.org' || hostname.endsWith('.openalex.org');
+    if (kind === 'doi') return hostname === 'doi.org' || hostname === 'dx.doi.org';
+    return true;
+  } catch {
+    return false;
   }
-  return undefined;
 };
 
-const getHydrationIssueKind = (code: string): HydrationIssueKind => {
-  if (code === 'UPSTREAM_REJECTED') return 'access';
-  if (code === 'RATE_LIMITED') return 'rate-limit';
-  return 'other';
+const getPublicPaperUrl = (result: WorkResult): string | undefined => {
+  const candidates: Array<[string | undefined, string]> = [
+    [result.links.oa, 'open-access'],
+    [result.links.openalex, 'openalex'],
+    [result.links.doi, 'doi'],
+    [result.links.landing_page, 'landing-page'],
+    [result.links.pdf, 'pdf'],
+  ];
+  return candidates.find(([candidate, kind]) => candidate && isAllowedExternalUrl(candidate, kind))?.[0];
 };
-const toPaper = (result: ScopusResult): Paper => ({
-  id: result.eid ?? result.scopusId ?? result.identifiers.doi ?? `rank-${result.rank}`,
+
+const toPaper = (result: WorkResult): Paper => ({
+  id: result.openAlexId ?? result.identifiers.doi ?? `rank-${result.rank}`,
   rank: result.rank,
-  title: result.title?.trim() || 'Untitled paper',
+  title: result.title?.trim() || 'Untitled work',
   authors: getAuthorNames(result),
   year: result.publication.coverDate?.slice(0, 4) ?? result.publication.publicationDate?.slice(0, 4),
   venue: result.publication.name,
@@ -127,9 +87,8 @@ const toPaper = (result: ScopusResult): Paper => ({
   abstract: result.abstract?.trim() || undefined,
   doi: result.identifiers.doi,
   externalUrl: getPublicPaperUrl(result),
-  citedByCount: result.metrics.citedByCount ?? result.metrics.citationCount,
+  citedByCount: result.metrics.citedByCount,
   openAccess: result.access.openAccess ?? false,
-  hydrationStatus: result.hydration.status,
 });
 
 export const searchPapers = async ({ query, limit }: SearchParams, signal?: AbortSignal): Promise<PaperSearchResult> => {
@@ -151,19 +110,7 @@ export const searchPapers = async ({ query, limit }: SearchParams, signal?: Abor
     query: data.query,
     totalResults: data.totalResults,
     returnedResults: data.returnedResults,
-    hydratedResults: data.hydratedResults,
-    failedResults: data.failedResults,
     searchErrors: data.errors,
-    hydration: {
-      requested: data.returnedResults,
-      hydrated: data.hydratedResults,
-      failed: data.failedResults,
-      issue: data.errors[0] ? {
-        kind: getHydrationIssueKind(data.errors[0].code),
-        code: data.errors[0].code,
-        message: data.errors[0].message,
-      } : undefined,
-    },
     papers: data.results.map(toPaper),
   };
 };
