@@ -1,0 +1,21 @@
+{
+  "name": "scopus-smart-search",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.5",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm --filter @scopus/shared build && pnpm --filter @scopus/scopus-client build && pnpm --filter @scopus/api dev",
+    "test": "pnpm build && pnpm -r test",
+    "typecheck": "pnpm build && pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
