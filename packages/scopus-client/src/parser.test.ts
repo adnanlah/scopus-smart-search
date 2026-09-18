@@ -26,6 +26,7 @@ describe('Scopus parsers', () => {
       scopusId: '123456789',
       eid: '2-s2.0-123456789',
       title: 'A useful paper',
+      authors: [{ name: 'Doe, Jane', authorId: '999' }],
       metrics: { citedByCount: 8 },
       hydration: { status: 'unavailable' },
     });
@@ -33,6 +34,15 @@ describe('Scopus parsers', () => {
     expect(result.entries[0]?.searchMetadata['dc:title']).toBe('  A useful paper  ');
   });
 
+  it('falls back to dc:creator when search authors are omitted', () => {
+    const result = parseSearchPayload({
+      'search-results': {
+        entry: [{ 'dc:title': 'Creator fallback', 'dc:creator': 'Creator, Researcher' }],
+      },
+    });
+
+    expect(result.entries[0]?.authors).toMatchObject([{ name: 'Creator, Researcher' }]);
+  });
   it('extracts full abstract metadata from parsed XML', () => {
     const base = parseSearchPayload({ 'search-results': { entry: [{ 'dc:identifier': 'SCOPUS_ID:123', 'dc:title': 'Search title' }] } }).entries[0];
     if (!base) throw new Error('Expected fixture result.');

@@ -105,11 +105,12 @@ const extractLinks = (entry: JsonRecord): Record<string, string> => {
 
 const parseSearchAuthor = (value: unknown): ScopusAuthor => {
   const record = asRecord(value);
-  const preferredName = asRecord(record['preferred-name']);
-  const name = cleanString(record.authname ?? record.name ?? record['ce:indexed-name']);
-  const givenName = cleanString(preferredName['given-name']);
-  const surname = cleanString(preferredName.surname);
-  const authorId = cleanString(record.authid ?? record['@_auid']);
+  const preferredName = asRecord(record['preferred-name'] ?? record['ce:preferred-name']);
+  const givenName = cleanString(preferredName['given-name'] ?? record['given-name']);
+  const surname = cleanString(preferredName.surname ?? record.surname);
+  const indexedName = cleanString(record['ce:indexed-name'] ?? record.indexedName ?? record['indexed-name']);
+  const name = cleanString(record.authname ?? record.name) ?? ([givenName, surname].filter(Boolean).join(' ') || indexedName);
+  const authorId = cleanString(record.authid ?? record['@_auid'] ?? record.auid);
   return { name, givenName, surname, authorId, affiliations: [], raw: record };
 };
 const parseAbstractAuthor = (value: unknown): ScopusAuthor => {
@@ -156,7 +157,9 @@ const getIdentifier = (entry: JsonRecord, prefix: string): string | undefined =>
 
 export const parseSearchEntry = (entryValue: unknown, rank: number): ScopusResult => {
   const entry = rawRecord(entryValue);
-  const authors = asArray(entry.author).map(parseSearchAuthor);
+  const parsedAuthors = asArray(entry.author).map(parseSearchAuthor);
+  const creator = cleanString(entry['dc:creator']);
+  const authors = parsedAuthors.length > 0 ? parsedAuthors : creator ? [{ name: creator, affiliations: [], raw: entry }] : [];
   const scopusId = getIdentifier(entry, 'SCOPUS_ID') ?? cleanString(entry['scopus-id']);
   const eid = cleanString(entry.eid) ?? getIdentifier(entry, 'EID');
   const doi = cleanString(entry['prism:doi'] ?? entry.doi);

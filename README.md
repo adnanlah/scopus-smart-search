@@ -19,7 +19,13 @@ pnpm dev
 
 The API environment belongs to `apps/api`. Keep `SCOPUS_API_KEY` server-side and do not expose it through frontend variables such as `VITE_*`.
 
-The API starts on `http://localhost:3000` by default. It can also be started directly from the workspace root with:
+The API starts on `http://localhost:3000` by default. Start the Vite frontend in a second terminal with:
+
+```powershell
+pnpm --filter @scopus/web dev
+```
+
+The frontend is available at `http://localhost:5173` and proxies `/api` requests to the API. The API can also be started directly from the workspace root with:
 
 ```bash
 pnpm --filter @scopus/api dev
@@ -35,5 +41,6 @@ The search endpoint caps `limit` at 100. It first performs one Scopus Search API
 ## Workspace layout
 
 - `apps/api` — Fastify HTTP API and its server-only environment configuration.
+- `apps/web` — Vite React research search UI using shadcn-style components and TanStack Query.
 - `packages/scopus-client` — typed Scopus API client, XML parsing, normalization, retries, and hydration.
-- `packages/shared` — response types shared with the future Vite frontend.
+- `packages/shared` — response types shared with the Vite frontend.
