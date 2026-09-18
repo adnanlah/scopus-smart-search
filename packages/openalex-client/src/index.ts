@@ -123,7 +123,7 @@ export class OpenAlexClient {
     const response = await this.request<{ meta?: { count?: number }; results?: unknown[] }>('/works', {
       search: query,
       page: '1',
-      per_page: String(requestedLimit),
+      per_page: '100',
       select: 'id,display_name,title,doi,publication_date,publication_year,biblio,abstract_inverted_index,authorships,primary_location,open_access,cited_by_count,ids',
     });
     const results = (response.data.results ?? []).map((work, index) => parseWork(work, index + 1));

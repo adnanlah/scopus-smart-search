@@ -22,13 +22,12 @@ export const App = () => {
   const [query, setQuery] = useState('');
   const [submittedQuery, setSubmittedQuery] = useState('');
   const [limit, setLimit] = useState(10);
-  const [submittedLimit, setSubmittedLimit] = useState(10);
   const [showValidation, setShowValidation] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const searchQuery = useQuery({
-    queryKey: ['papers', submittedQuery, submittedLimit],
-    queryFn: ({ signal }) => searchPapers({ query: submittedQuery, limit: submittedLimit }, signal),
+    queryKey: ['papers', submittedQuery],
+    queryFn: ({ signal }) => searchPapers({ query: submittedQuery }, signal),
     enabled: submittedQuery.length > 0,
     retry: 1,
     staleTime: 30_000,
@@ -37,11 +36,15 @@ export const App = () => {
 
   const isInvalid = query.trim().length === 0;
   const isUpdating = searchQuery.isFetching && !searchQuery.isPending;
+  const displayedPapers = useMemo(
+    () => searchQuery.data?.papers.slice(0, limit) ?? [],
+    [searchQuery.data?.papers, limit],
+  );
   const resultSummary = useMemo(() => {
     if (!searchQuery.data) return undefined;
     const paperLabel = searchQuery.data.totalResults === 1 ? 'paper' : 'papers';
-    return `${searchQuery.data.totalResults.toLocaleString()} ${paperLabel} · ${searchQuery.data.returnedResults} shown`;
-  }, [searchQuery.data]);
+    return `${searchQuery.data.totalResults.toLocaleString()} ${paperLabel} · ${displayedPapers.length} shown`;
+  }, [displayedPapers.length, searchQuery.data]);
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -53,7 +56,6 @@ export const App = () => {
     }
     setShowValidation(false);
     setSubmittedQuery(nextQuery);
-    setSubmittedLimit(limit);
   };
 
   const resetSearch = () => {
@@ -70,7 +72,7 @@ export const App = () => {
       : searchQuery.data?.papers.length === 0
         ? 'Search complete. No papers found.'
         : searchQuery.data
-          ? `Search complete. ${searchQuery.data.returnedResults} papers shown.`
+          ? `Search complete. ${displayedPapers.length} papers shown.`
           : '';
 
   return (
@@ -185,7 +187,7 @@ export const App = () => {
 
             {searchQuery.isSuccess && searchQuery.data.papers.length > 0 && (
               <div className="divide-y overflow-hidden rounded-2xl border bg-card">
-                {searchQuery.data.papers.map((paper) => <PaperRow key={paper.id} paper={paper} />)}
+                {displayedPapers.map((paper) => <PaperRow key={paper.id} paper={paper} />)}
               </div>
             )}
           </section>

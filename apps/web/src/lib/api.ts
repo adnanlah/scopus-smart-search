@@ -2,7 +2,6 @@ import type { SearchError, SearchResponse, WorkResult } from '@openalex/shared';
 
 export interface SearchParams {
   query: string;
-  limit: number;
 }
 
 export interface Paper {
@@ -91,8 +90,8 @@ const toPaper = (result: WorkResult): Paper => ({
   openAccess: result.access.openAccess ?? false,
 });
 
-export const searchPapers = async ({ query, limit }: SearchParams, signal?: AbortSignal): Promise<PaperSearchResult> => {
-  const params = new URLSearchParams({ q: query.trim(), limit: String(limit) });
+export const searchPapers = async ({ query }: SearchParams, signal?: AbortSignal): Promise<PaperSearchResult> => {
+  const params = new URLSearchParams({ q: query.trim(), limit: '100' });
   const response = await fetch(`${API_BASE_URL}/search?${params.toString()}`, { signal });
 
   const body: unknown = await response.json().catch(() => undefined);

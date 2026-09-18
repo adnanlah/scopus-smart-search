@@ -25,14 +25,14 @@ describe('searchPapers', () => {
       errors: [],
     }), { status: 200 })));
 
-    const result = await searchPapers({ query: '  graph neural networks ', limit: 10 });
-    expect(fetch).toHaveBeenCalledWith('/api/search?q=graph+neural+networks&limit=10', expect.objectContaining({ signal: undefined }));
+    const result = await searchPapers({ query: '  graph neural networks ' });
+    expect(fetch).toHaveBeenCalledWith('/api/search?q=graph+neural+networks&limit=100', expect.objectContaining({ signal: undefined }));
     expect(result.papers[0]).toMatchObject({ rank: 1, title: 'Graph neural networks', year: '2024', publicationDate: '2024-05-01', citedByCount: 12, openAccess: true });
     expect(result.searchErrors).toEqual([]);
   });
 
   it('surfaces backend error messages', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: 'OpenAlex is unavailable.' } }), { status: 503 })));
-    await expect(searchPapers({ query: 'test', limit: 10 })).rejects.toMatchObject({ name: 'ApiError', status: 503, code: 'REQUEST_FAILED', message: 'OpenAlex is unavailable.' } satisfies Partial<ApiError>);
+    await expect(searchPapers({ query: 'test' })).rejects.toMatchObject({ name: 'ApiError', status: 503, code: 'REQUEST_FAILED', message: 'OpenAlex is unavailable.' } satisfies Partial<ApiError>);
   });
 });

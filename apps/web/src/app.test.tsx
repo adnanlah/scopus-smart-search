@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '@/app';
@@ -35,7 +35,10 @@ const renderApp = () => {
 };
 
 describe('App', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
   it('renders OpenAlex metadata and safe DOI/OpenAlex links', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(makeResponse()), { status: 200 })));
@@ -66,6 +69,36 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Climate adaptation strategies' })).toBeInTheDocument();
     expect(screen.queryByText(/abstract access/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/abstract access/i)).not.toBeInTheDocument();
+  });
+
+  it('changes the displayed count without refetching the 100-result batch', async () => {
+    const papers = Array.from({ length: 100 }, (_, index) => ({
+      ...paper,
+      rank: index + 1,
+      openAlexId: `https://openalex.org/W${index + 1}`,
+      title: `Climate paper ${index + 1}`,
+    }));
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(makeResponse({
+      totalResults: 250,
+      returnedResults: 100,
+      results: papers,
+    })), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.type(screen.getByLabelText('Research topic'), 'climate adaptation');
+    await user.keyboard('{Enter}');
+
+    expect(await screen.findByRole('heading', { name: 'Climate paper 1' })).toBeInTheDocument();
+    expect(screen.getAllByRole('article')).toHaveLength(10);
+    expect(screen.getByText('250 papers · 10 shown')).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Results per search' }), '25');
+
+    expect(screen.getAllByRole('article')).toHaveLength(25);
+    expect(screen.getByText('250 papers · 25 shown')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('shows an empty state and returns focus to a new search', async () => {

@@ -10,7 +10,7 @@ describe('OpenAlexClient', () => {
   it('builds a works search capped at 100 results and sends an optional bearer token', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ meta: { count: 0 }, results: [] }));
     const client = new OpenAlexClient({ apiKey: 'secret', baseUrl: 'https://example.test' });
-    await client.search('heart attack', 500);
+    await client.search('heart attack', 10);
     const [input, init] = fetchMock.mock.calls[0] ?? [];
     const url = new URL(String(input));
     expect(url.pathname).toBe('/works');
