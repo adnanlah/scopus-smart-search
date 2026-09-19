@@ -21,14 +21,30 @@ describe('searchPapers', () => {
         access: { openAccess: true },
         links: { openalex: 'https://openalex.org/W1' },
         searchMetadata: {},
+        semanticScore: 0.84,
       }],
       errors: [],
     }), { status: 200 })));
 
     const result = await searchPapers({ query: '  graph neural networks ' });
     expect(fetch).toHaveBeenCalledWith('/api/search?q=graph+neural+networks&limit=100', expect.objectContaining({ signal: undefined }));
-    expect(result.papers[0]).toMatchObject({ rank: 1, title: 'Graph neural networks', year: '2024', publicationDate: '2024-05-01', citedByCount: 12, openAccess: true });
+    expect(result.papers[0]).toMatchObject({ rank: 1, title: 'Graph neural networks', year: '2024', publicationDate: '2024-05-01', citedByCount: 12, openAccess: true, semanticScore: 0.84 });
     expect(result.searchErrors).toEqual([]);
+  });
+
+  it('encodes the optional semantic filter', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      query: 'graph neural networks',
+      requestedLimit: 100,
+      totalResults: 10,
+      returnedResults: 1,
+      results: [],
+      errors: [],
+    }), { status: 200 })));
+
+    await searchPapers({ query: 'graph neural networks', filter: 'human evaluation & recall' });
+
+    expect(fetch).toHaveBeenCalledWith('/api/search?q=graph+neural+networks&limit=100&filter=human+evaluation+%26+recall', expect.objectContaining({ signal: undefined }));
   });
 
   it('surfaces backend error messages', async () => {

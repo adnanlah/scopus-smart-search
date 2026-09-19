@@ -3,20 +3,33 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import cors from '@fastify/cors';
 import Fastify, { type FastifyInstance } from 'fastify';
+import { TypeSafeClient } from '@typesafe-ai/sdk';
 import { OpenAlexClient, OpenAlexClientError } from '@openalex/openalex-client';
 import type { SearchResponse } from '@openalex/shared';
 import { z } from 'zod';
 import { loadConfig, type AppConfig } from './config.js';
+import { JEV_MODEL, JevSemanticFilter, TypeSafeJevClient, type SemanticFilter } from './jev.js';
 
 const searchQuerySchema = z.object({
   q: z.string().trim().min(1, 'Query parameter q is required.').max(2_000, 'Query is too long.'),
+  filter: z.string().trim().max(2_000, 'Filter is too long.').optional(),
   limit: z.coerce.number().int().min(1).max(100).default(100),
 });
 
 const errorBody = (code: string, message: string) => ({ error: { code, message } });
 
+const createSemanticFilter = (config: AppConfig, injected?: SemanticFilter): SemanticFilter | undefined => {
+  if (injected) return injected;
+  if (!config.typesafeApiKey) return undefined;
+  return new JevSemanticFilter(new TypeSafeJevClient(new TypeSafeClient({
+    apiKey: config.typesafeApiKey,
+    defaultModel: JEV_MODEL,
+  })));
+};
+
 export interface ServerDependencies {
   client?: OpenAlexClient;
+  semanticFilter?: SemanticFilter;
   config?: AppConfig;
 }
 
@@ -29,6 +42,7 @@ export const buildServer = async (dependencies: ServerDependencies = {}): Promis
     timeoutMs: config.requestTimeoutMs,
     maxRetries: config.maxRetries,
   });
+  const semanticFilter = createSemanticFilter(config, dependencies.semanticFilter);
 
   await server.register(cors, { origin: config.corsOrigin === '*' ? true : config.corsOrigin.split(',').map((origin) => origin.trim()) });
 
@@ -40,7 +54,20 @@ export const buildServer = async (dependencies: ServerDependencies = {}): Promis
       return reply.code(400).send(errorBody('INVALID_QUERY', parsed.error.issues.map((issue) => issue.message).join(' ')));
     }
     try {
-      return await client.search(parsed.data.q, parsed.data.limit);
+      const filter = parsed.data.filter || undefined;
+      const response = await client.search(parsed.data.q, filter ? 100 : parsed.data.limit);
+      if (!filter) return response;
+      if (!semanticFilter) {
+        return reply.code(503).send(errorBody('TYPESAFE_NOT_CONFIGURED', 'Semantic filtering is not configured on the search service.'));
+      }
+      try {
+        const filteredResults = await semanticFilter.filter(response.results, filter);
+        return { ...response, returnedResults: filteredResults.length, results: filteredResults };
+      } catch (error) {
+        const status = typeof error === 'object' && error !== null && 'status' in error && error.status === 429 ? 429 : 502;
+        request.log.error(error);
+        return reply.code(status).send(errorBody('TYPESAFE_REQUEST_FAILED', 'Semantic filtering could not be completed.'));
+      }
     } catch (error) {
       if (error instanceof OpenAlexClientError) {
         const status = error.status === 429 ? 429 : error.status === 401 || error.status === 403 ? 502 : 502;

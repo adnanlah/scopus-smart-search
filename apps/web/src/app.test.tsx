@@ -68,7 +68,6 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Climate adaptation strategies' })).toBeInTheDocument();
     expect(screen.queryByText(/abstract access/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/abstract access/i)).not.toBeInTheDocument();
   });
 
   it('changes the displayed count without refetching the 100-result batch', async () => {
@@ -99,6 +98,31 @@ describe('App', () => {
     expect(screen.getAllByRole('article')).toHaveLength(25);
     expect(screen.getByText('250 papers · 25 shown')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('submits the semantic filter and displays Jev-ranked results', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(makeResponse({
+      totalResults: 4,
+      returnedResults: 2,
+      results: [
+        { ...paper, title: 'Highly relevant work', semanticScore: 0.8734 },
+        { ...paper, openAlexId: 'https://openalex.org/W2', title: 'Borderline relevant work', semanticScore: 0.5 },
+      ],
+    })), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.type(screen.getByLabelText('Research topic'), 'climate adaptation');
+    await user.type(screen.getByLabelText(/Semantic filter/), 'human evaluation');
+    await user.click(screen.getByRole('button', { name: 'Search' }));
+
+    expect(await screen.findByRole('heading', { name: 'Highly relevant work' })).toBeInTheDocument();
+    expect(screen.getByText('Borderline relevant work')).toBeInTheDocument();
+    expect(screen.queryByText('Low relevance work')).not.toBeInTheDocument();
+    expect(screen.getByText('Noul probability: 0.8734')).toBeInTheDocument();
+    expect(screen.getByText('2 relevant papers · 2 shown from 4 OpenAlex results')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith('/api/search?q=climate+adaptation&limit=100&filter=human+evaluation', expect.objectContaining({ signal: expect.anything() }));
   });
 
   it('shows an empty state and returns focus to a new search', async () => {

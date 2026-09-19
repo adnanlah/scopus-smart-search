@@ -13,11 +13,12 @@ TypeScript monorepo for searching OpenAlex works and presenting their available 
 ```powershell
 pnpm install
 Copy-Item apps/api/.env.example apps/api/.env
+# Set TYPESAFE_API_KEY in apps/api/.env to enable optional Jev semantic filtering.
 # Optionally edit apps/api/.env and set OPENALEX_API_KEY
 pnpm dev
 ```
 
-The API environment belongs to `apps/api`. Keep `OPENALEX_API_KEY` server-side and do not expose it through frontend variables such as `VITE_*`. OpenAlex also supports anonymous API requests.
+The API environment belongs to `apps/api`. Keep `OPENALEX_API_KEY` and `TYPESAFE_API_KEY` server-side and do not expose them through frontend variables such as `VITE_*`. OpenAlex also supports anonymous API requests. When a semantic filter is provided, the API sends the first 100 OpenAlex works to Jev, keeps scores at or above 0.5, and sorts the retained works by relevance.
 
 The API starts on `http://localhost:3000` by default. Start the Vite frontend in a second terminal with:
 

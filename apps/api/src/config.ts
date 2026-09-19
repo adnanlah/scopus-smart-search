@@ -7,6 +7,7 @@ const optionalEnvironmentString = z.preprocess(
 
 const environmentSchema = z.object({
   OPENALEX_API_KEY: optionalEnvironmentString,
+  TYPESAFE_API_KEY: optionalEnvironmentString,
   PORT: z.coerce.number().int().positive().default(3000),
   HOST: z.string().default('127.0.0.1'),
   OPENALEX_BASE_URL: z.string().url().default('https://api.openalex.org'),
@@ -17,6 +18,7 @@ const environmentSchema = z.object({
 
 export interface AppConfig {
   apiKey?: string;
+  typesafeApiKey?: string;
   port: number;
   host: string;
   baseUrl: string;
@@ -29,6 +31,7 @@ export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppCon
   const parsed = environmentSchema.parse(environment);
   return {
     apiKey: parsed.OPENALEX_API_KEY,
+    typesafeApiKey: parsed.TYPESAFE_API_KEY,
     port: parsed.PORT,
     host: parsed.HOST,
     baseUrl: parsed.OPENALEX_BASE_URL,

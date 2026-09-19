@@ -16,6 +16,7 @@ export interface WorkAffiliation {
 
 export interface WorkResult {
   rank: number;
+  semanticScore?: number;
   openAlexId?: string;
   title?: string;
   abstract?: string;

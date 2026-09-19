@@ -5,6 +5,7 @@ import { ApiError, searchPapers } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Select } from '@/components/ui/select';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { PaperRow } from '@/components/paper-row';
@@ -13,21 +14,23 @@ import { PaperRowSkeleton } from '@/components/paper-row-skeleton';
 const resultLimitOptions = [10, 25, 50, 100];
 
 const getErrorMessage = (error: Error) => {
-  if (error instanceof ApiError && error.status === 429) return 'OpenAlex is rate limiting requests. Please wait a moment and try again.';
+  if (error instanceof ApiError && error.status === 429) return 'A search provider is rate limiting requests. Please wait a moment and try again.';
   if (error instanceof ApiError && error.status >= 500) return 'The search service is temporarily unavailable. Please try again.';
   return error.message;
 };
 
 export const App = () => {
   const [query, setQuery] = useState('');
+  const [semanticFilter, setSemanticFilter] = useState('');
   const [submittedQuery, setSubmittedQuery] = useState('');
+  const [submittedFilter, setSubmittedFilter] = useState('');
   const [limit, setLimit] = useState(10);
   const [showValidation, setShowValidation] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const searchQuery = useQuery({
-    queryKey: ['papers', submittedQuery],
-    queryFn: ({ signal }) => searchPapers({ query: submittedQuery }, signal),
+    queryKey: ['papers', submittedQuery, submittedFilter],
+    queryFn: ({ signal }) => searchPapers({ query: submittedQuery, filter: submittedFilter }, signal),
     enabled: submittedQuery.length > 0,
     retry: 1,
     staleTime: 30_000,
@@ -42,9 +45,13 @@ export const App = () => {
   );
   const resultSummary = useMemo(() => {
     if (!searchQuery.data) return undefined;
-    const paperLabel = searchQuery.data.totalResults === 1 ? 'paper' : 'papers';
-    return `${searchQuery.data.totalResults.toLocaleString()} ${paperLabel} · ${displayedPapers.length} shown`;
-  }, [displayedPapers.length, searchQuery.data]);
+    const paperLabel = searchQuery.data.returnedResults === 1 ? 'paper' : 'papers';
+    if (submittedFilter) {
+      return `${searchQuery.data.returnedResults.toLocaleString()} relevant ${paperLabel} · ${displayedPapers.length} shown from ${searchQuery.data.totalResults.toLocaleString()} OpenAlex results`;
+    }
+    const totalLabel = searchQuery.data.totalResults === 1 ? 'paper' : 'papers';
+    return `${searchQuery.data.totalResults.toLocaleString()} ${totalLabel} · ${displayedPapers.length} shown`;
+  }, [displayedPapers.length, searchQuery.data, submittedFilter]);
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -56,11 +63,14 @@ export const App = () => {
     }
     setShowValidation(false);
     setSubmittedQuery(nextQuery);
+    setSubmittedFilter(semanticFilter.trim());
   };
 
   const resetSearch = () => {
     setQuery('');
+    setSemanticFilter('');
     setSubmittedQuery('');
+    setSubmittedFilter('');
     setShowValidation(false);
     searchInputRef.current?.focus();
   };
@@ -127,6 +137,20 @@ export const App = () => {
               <p id="query-help" className="text-xs text-muted-foreground">Search terms are sent securely through your configured API.</p>
               {showValidation && isInvalid && <p id="query-error" className="text-xs font-medium text-destructive">Enter a topic before searching.</p>}
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="paper-filter">Semantic filter <span className="font-normal text-muted-foreground">(optional)</span></Label>
+              <Textarea
+                id="paper-filter"
+                value={semanticFilter}
+                onChange={(event) => setSemanticFilter(event.target.value)}
+                placeholder="e.g. studies that evaluate retrieval quality using human judgments"
+                rows={3}
+                aria-describedby="filter-help"
+              />
+              <p id="filter-help" className="text-xs text-muted-foreground">Jev will rank the OpenAlex results against this instruction and omit works below 50% relevance.</p>
+            </div>
+
             <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-end sm:justify-between">
               <div className="space-y-1">
                 <Label htmlFor="result-limit">Results per search</Label>
@@ -179,8 +203,8 @@ export const App = () => {
             {searchQuery.isSuccess && !searchQuery.isPlaceholderData && searchQuery.data.papers.length === 0 && (
               <div className="rounded-2xl border border-dashed bg-card px-6 py-12 text-center">
                 <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground"><Search className="h-5 w-5" aria-hidden="true" /></span>
-                <h3 className="mt-4 font-semibold">No papers found for this search</h3>
-                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">Try broader keywords, remove a phrase, or search for a related concept.</p>
+                <h3 className="mt-4 font-semibold">{submittedFilter ? 'No papers met this semantic filter' : 'No papers found for this search'}</h3>
+                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{submittedFilter ? 'Try a broader filtering instruction or remove the semantic filter.' : 'Try broader keywords, remove a phrase, or search for a related concept.'}</p>
                 <Button type="button" variant="outline" size="sm" className="mt-5 gap-2" onClick={resetSearch}>Start a new search <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></Button>
               </div>
             )}

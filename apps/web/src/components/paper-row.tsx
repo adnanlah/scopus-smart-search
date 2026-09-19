@@ -19,6 +19,7 @@ export const PaperRow = ({ paper }: PaperRowProps) => {
     ? `${paper.authors.slice(0, 3).join(', ')}${paper.authors.length > 3 ? ` +${paper.authors.length - 3}` : ''}`
     : undefined;
   const doiUrl = paper.doi ? `https://doi.org/${paper.doi}` : undefined;
+  const semanticScoreLabel = typeof paper.semanticScore === 'number' ? `Noul probability: ${paper.semanticScore}` : undefined;
 
   const copyDoi = async () => {
     if (!paper.doi || !navigator.clipboard) return;
@@ -45,6 +46,7 @@ export const PaperRow = ({ paper }: PaperRowProps) => {
           {paper.venue}{paper.venue && paper.year ? ' · ' : ''}{paper.year}
         </p>
       )}
+      {semanticScoreLabel && <p aria-label={semanticScoreLabel} className="mt-2 text-xs font-medium text-primary">{semanticScoreLabel}</p>}
 
       {paper.abstract && (
         <div className="mt-5 space-y-2">
