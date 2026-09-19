@@ -17,7 +17,7 @@ describe('OpenAlexClient', () => {
     expect(url.searchParams.get('search')).toBe('heart attack');
     expect(url.searchParams.get('per_page')).toBe('10');
     expect(url.searchParams.get('page')).toBe('1');
-    expect(url.searchParams.get('filter')).toBeNull();
+    expect(url.searchParams.get('filter')).toBe('primary_location.source.is_core:true');
     const selectedFields = url.searchParams.get('select')?.split(',') ?? [];
     expect(selectedFields).toEqual(expect.arrayContaining([
       'abstract_inverted_index',
@@ -47,7 +47,7 @@ describe('OpenAlexClient', () => {
     const [input] = fetchMock.mock.calls[0] ?? [];
     const url = new URL(String(input));
     expect(url.searchParams.get('per_page')).toBe('25');
-    expect(url.searchParams.get('filter')).toBe('from_publication_date:2022-01-01');
+    expect(url.searchParams.get('filter')).toBe('primary_location.source.is_core:true,from_publication_date:2022-01-01');
     fetchMock.mockRestore();
   });
 

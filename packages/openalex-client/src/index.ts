@@ -131,9 +131,9 @@ export class OpenAlexClient {
       per_page: String(requestedLimit),
       select: 'id,display_name,title,doi,type,language,publication_date,publication_year,biblio,abstract_inverted_index,authorships,primary_location,open_access,cited_by_count,topics,keywords,indexed_in,is_retracted,ids',
     };
-    if (options.fromPublicationYear !== undefined) {
-      searchParams.filter = `from_publication_date:${options.fromPublicationYear}-01-01`;
-    }
+    const filters = ['primary_location.source.is_core:true'];
+    if (options.fromPublicationYear !== undefined) filters.push(`from_publication_date:${options.fromPublicationYear}-01-01`);
+    searchParams.filter = filters.join(',');
     const response = await this.request<{ meta?: { count?: number }; results?: unknown[] }>('/works', searchParams);
     const results = (response.data.results ?? []).map((work, index) => parseWork(work, index + 1));
     return {
