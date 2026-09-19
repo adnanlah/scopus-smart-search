@@ -142,6 +142,7 @@ export class OpenAlexClient {
       totalResults: typeof response.data.meta?.count === 'number' ? response.data.meta.count : results.length,
       returnedResults: results.length,
       results,
+      extractedKeywords: [],
       errors: [],
       quota: response.metadata.quota,
     };

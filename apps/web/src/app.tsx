@@ -1,9 +1,9 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { SEARCH_MIN_WORDS, countSearchWords } from '@openalex/shared';
 import { AlertCircle, ArrowRight, Search } from 'lucide-react';
 import { ApiError, searchPapers } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
@@ -19,19 +19,17 @@ const getErrorMessage = (error: Error) => {
 
 interface SearchDraft {
   query: string;
-  rankingPreference: string;
   fromYear: string;
 }
 
 interface SubmittedSearch {
   query: string;
-  rankingPreference: string;
   fromYear?: number;
+  requestId: number;
 }
 
 const createEmptySearchDraft = (): SearchDraft => ({
   query: '',
-  rankingPreference: '',
   fromYear: '',
 });
 
@@ -53,18 +51,19 @@ export const App = () => {
   const [draft, setDraft] = useState<SearchDraft>(createEmptySearchDraft);
   const [submittedSearch, setSubmittedSearch] = useState<SubmittedSearch>();
   const [showValidation, setShowValidation] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLTextAreaElement>(null);
+  const nextRequestIdRef = useRef(0);
 
   const searchQuery = useQuery({
     queryKey: [
       'papers',
       submittedSearch?.query,
-      submittedSearch?.rankingPreference,
       submittedSearch?.fromYear,
+      submittedSearch?.requestId,
     ],
     queryFn: ({ signal }) => searchPapers({
       query: submittedSearch!.query,
-      rankingPreference: submittedSearch!.rankingPreference,
+      rankingPreference: submittedSearch!.query,
       fromYear: submittedSearch!.fromYear,
     }, signal),
     enabled: Boolean(submittedSearch),
@@ -73,30 +72,32 @@ export const App = () => {
     placeholderData: keepPreviousData,
   });
 
-  const isInvalid = draft.query.trim().length === 0;
+  const queryWordCount = countSearchWords(draft.query);
+  const isInvalid = queryWordCount < SEARCH_MIN_WORDS;
   const isUpdating = searchQuery.isFetching && !searchQuery.isPending;
   const displayedPapers = searchQuery.data?.papers ?? [];
   const resultSummary = searchQuery.data
     ? formatResultSummary(
       searchQuery.data.returnedResults,
       searchQuery.data.totalResults,
-      Boolean(submittedSearch?.rankingPreference),
+      true,
     )
     : undefined;
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextQuery = draft.query.trim();
-    if (!nextQuery) {
+    if (countSearchWords(nextQuery) < SEARCH_MIN_WORDS) {
       setShowValidation(true);
       searchInputRef.current?.focus();
       return;
     }
     setShowValidation(false);
+    nextRequestIdRef.current += 1;
     setSubmittedSearch({
       query: nextQuery,
-      rankingPreference: draft.rankingPreference.trim(),
       fromYear: draft.fromYear ? Number(draft.fromYear) : undefined,
+      requestId: nextRequestIdRef.current,
     });
   };
 
@@ -128,44 +129,33 @@ export const App = () => {
         <section className="rounded-xl bg-card p-0" aria-labelledby="search-heading">
           <div className="mb-4">
             <h2 id="search-heading" className="text-base font-semibold tracking-tight">Start a search</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Enter a topic and optionally describe what matters most.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Describe the research you want to find.</p>
           </div>
           <form onSubmit={submitSearch} className="space-y-4" noValidate>
             <div className="space-y-2">
-              <Label htmlFor="paper-query">Research topic</Label>
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                <Input
-                  ref={searchInputRef}
-                  id="paper-query"
-                  value={draft.query}
-                  onChange={(event) => {
-                    setDraft((current) => ({ ...current, query: event.target.value }));
-                    if (showValidation && event.target.value.trim()) setShowValidation(false);
-                  }}
-                  placeholder="e.g. retrieval-augmented generation for scientific discovery"
-                  autoComplete="off"
-                  autoFocus
-                  aria-invalid={showValidation && isInvalid}
-                  aria-describedby={showValidation && isInvalid ? 'query-error' : undefined}
-                  className="h-11 pl-10 text-sm focus-visible:ring-4 focus-visible:ring-primary/10"
-                />
-              </div>
-              {showValidation && isInvalid && <p id="query-error" className="text-xs font-medium text-destructive">Enter a topic before searching.</p>}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="paper-filter">What should rank higher? <span className="font-normal text-muted-foreground">(optional)</span></Label>
+              <Label htmlFor="paper-query">Describe your research topic</Label>
               <Textarea
-                id="paper-filter"
-                value={draft.rankingPreference}
-                onChange={(event) => setDraft((current) => ({
-                  ...current,
-                  rankingPreference: event.target.value,
-                }))}
-                placeholder="e.g. studies that evaluate retrieval quality using human judgments"
-                rows={2}
+                ref={searchInputRef}
+                id="paper-query"
+                value={draft.query}
+                onChange={(event) => {
+                  setDraft((current) => ({ ...current, query: event.target.value }));
+                  if (showValidation && countSearchWords(event.target.value) >= SEARCH_MIN_WORDS) {
+                    setShowValidation(false);
+                  }
+                }}
+                placeholder="e.g. meta-learning for scarce medical images using foundation models"
+                rows={4}
+                required
+                autoFocus
+                aria-invalid={showValidation && isInvalid}
+                aria-describedby={showValidation && isInvalid ? 'query-error' : undefined}
               />
+              {showValidation && isInvalid && (
+                <p id="query-error" className="text-xs font-medium text-destructive">
+                  Enter at least {SEARCH_MIN_WORDS} words ({queryWordCount}/{SEARCH_MIN_WORDS}).
+                </p>
+              )}
             </div>
 
             <div className="flex flex-col gap-4 pt-1 sm:flex-row sm:items-end sm:justify-between">
@@ -206,6 +196,28 @@ export const App = () => {
                 {!isUpdating && resultSummary}
               </div>
             </div>
+
+            {!searchQuery.isPlaceholderData && searchQuery.data && searchQuery.data.extractedKeywords.length > 0 && (
+              <div className="space-y-2" aria-labelledby="extracted-keywords-heading">
+                <h3 id="extracted-keywords-heading" className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Extracted keywords
+                </h3>
+                <ul className="flex flex-wrap gap-2" aria-label="Extracted keywords">
+                  {searchQuery.data.extractedKeywords.map(({ phrase, score }) => (
+                    <li key={phrase}>
+                      <span
+                        className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-2.5 py-1 text-xs font-medium text-primary"
+                        title={`Relevance score: ${Math.round(score * 100)}%`}
+                      >
+                        <span>{phrase}</span>
+                        <span className="text-primary/40" aria-hidden="true">·</span>
+                        <span className="tabular-nums text-primary/70">{Math.round(score * 100)}%</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {searchQuery.isPending && <div className="divide-y overflow-hidden rounded-2xl border bg-card"><PaperRowSkeleton /><PaperRowSkeleton /></div>}
 

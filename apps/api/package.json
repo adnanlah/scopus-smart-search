@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
+    "@huggingface/transformers": "^3.8.1",
     "@openalex/openalex-client": "workspace:*",
     "@openalex/shared": "workspace:*",
     "@typesafe-ai/sdk": "^0.6.0",

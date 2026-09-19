@@ -1,3 +1,10 @@
+export const SEARCH_MIN_WORDS = 10;
+
+const SEARCH_WORD_PATTERN = /[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu;
+
+export const countSearchWords = (value: string): number =>
+  value.normalize('NFKC').match(SEARCH_WORD_PATTERN)?.length ?? 0;
+
 export interface WorkAuthor {
   id?: string;
   name?: string;
@@ -79,12 +86,18 @@ export interface SearchError {
   message: string;
 }
 
+export interface ExtractedKeyword {
+  phrase: string;
+  score: number;
+}
+
 export interface SearchResponse {
   query: string;
   requestedLimit: number;
   totalResults: number;
   returnedResults: number;
   results: WorkResult[];
+  extractedKeywords: ExtractedKeyword[];
   errors: SearchError[];
   quota?: QuotaInfo;
 }

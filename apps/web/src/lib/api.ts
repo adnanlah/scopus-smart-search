@@ -1,4 +1,4 @@
-import type { SearchError, SearchResponse, WorkResult } from '@openalex/shared';
+import type { ExtractedKeyword, SearchError, SearchResponse, WorkResult } from '@openalex/shared';
 
 export interface SearchParams {
   query: string;
@@ -32,6 +32,7 @@ export interface PaperSearchResult {
   totalResults: number;
   returnedResults: number;
   searchErrors: SearchError[];
+  extractedKeywords: ExtractedKeyword[];
   papers: Paper[];
 }
 
@@ -127,6 +128,7 @@ export const searchPapers = async ({ query, rankingPreference, fromYear }: Searc
     totalResults: data.totalResults,
     returnedResults: data.returnedResults,
     searchErrors: data.errors,
+    extractedKeywords: data.extractedKeywords ?? [],
     papers: data.results.map(toPaper),
   };
 };

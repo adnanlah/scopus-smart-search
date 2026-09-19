@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '@/app';
@@ -29,6 +29,10 @@ const makeResponse = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+const validResearchDescription = 'climate adaptation strategies for resilient cities under increasingly severe weather events';
+const validEvaluationDescription = 'human evaluation of retrieval quality for medical research systems and clinical practice';
+const encodeQueryValue = (value: string) => value.replace(/ /gu, '+');
+
 const renderApp = () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
@@ -45,10 +49,13 @@ describe('App', () => {
     const user = userEvent.setup();
     renderApp();
 
-    expect(screen.queryByText('Search by topic and describe what you want to prioritize.')).not.toBeInTheDocument();
-    expect(screen.getByLabelText(/What should rank higher/)).toBeInTheDocument();
-    await user.type(screen.getByLabelText('Research topic'), 'climate adaptation');
-    await user.keyboard('{Enter}');
+    const researchDescription = screen.getByLabelText('Describe your research topic');
+    expect(researchDescription).toBeRequired();
+    expect(researchDescription.tagName).toBe('TEXTAREA');
+    expect(screen.queryByLabelText('Research topic')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/What should rank higher/)).not.toBeInTheDocument();
+    await user.type(researchDescription, validResearchDescription);
+    await user.click(screen.getByRole('button', { name: 'Search' }));
 
     expect(await screen.findByRole('heading', { name: 'Climate adaptation strategies' })).toBeInTheDocument();
     expect(screen.getByText('Research Journal · 2023 · Vol. 12 · Issue 3 · pp. 45-61')).toBeInTheDocument();
@@ -70,8 +77,8 @@ describe('App', () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.type(screen.getByLabelText('Research topic'), 'climate adaptation');
-    await user.keyboard('{Enter}');
+    await user.type(screen.getByLabelText('Describe your research topic'), validResearchDescription);
+    await user.click(screen.getByRole('button', { name: 'Search' }));
 
     expect(await screen.findByRole('heading', { name: 'Climate adaptation strategies' })).toBeInTheDocument();
     expect(screen.queryByText(/abstract access/i)).not.toBeInTheDocument();
@@ -93,20 +100,24 @@ describe('App', () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.type(screen.getByLabelText('Research topic'), 'climate adaptation');
-    await user.keyboard('{Enter}');
+    await user.type(screen.getByLabelText('Describe your research topic'), validResearchDescription);
+    await user.click(screen.getByRole('button', { name: 'Search' }));
 
     expect(await screen.findByRole('heading', { name: 'Climate paper 1' })).toBeInTheDocument();
     expect(screen.getAllByRole('article')).toHaveLength(100);
-    expect(screen.getByText('100 papers · 250 matches')).toBeInTheDocument();
+    expect(screen.getByText('100 papers ranked · 250 matches')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Publication date' })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('submits the ranking preference and displays every Jev-ranked candidate', async () => {
+  it('submits the research description and displays keywords and every Jev-ranked candidate', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(makeResponse({
       totalResults: 4,
       returnedResults: 4,
+      extractedKeywords: [
+        { phrase: 'human evaluation', score: 0.91 },
+        { phrase: 'retrieval quality', score: 0.84 },
+      ],
       results: [
         { ...paper, title: 'Highly relevant work', semanticScore: 0.8734 },
         { ...paper, openAlexId: 'https://openalex.org/W2', title: 'Borderline relevant work', semanticScore: 0.5 },
@@ -118,8 +129,7 @@ describe('App', () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.type(screen.getByLabelText('Research topic'), 'climate adaptation');
-    await user.type(screen.getByLabelText(/What should rank higher/), 'human evaluation');
+    await user.type(screen.getByLabelText('Describe your research topic'), validEvaluationDescription);
     await user.click(screen.getByRole('button', { name: 'Search' }));
 
     expect(await screen.findByRole('heading', { name: 'Highly relevant work' })).toBeInTheDocument();
@@ -128,7 +138,28 @@ describe('App', () => {
     expect(screen.getByText('Very low relevance work')).toBeInTheDocument();
     expect(screen.getByText('AI match: 87%')).toBeInTheDocument();
     expect(screen.getByText('4 papers ranked · 4 matches')).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith('/api/search?q=climate+adaptation&limit=100&filter=human+evaluation', expect.objectContaining({ signal: expect.anything() }));
+    const keywordList = screen.getByRole('list', { name: 'Extracted keywords' });
+    const humanEvaluationBadge = within(keywordList).getByTitle('Relevance score: 91%');
+    const retrievalQualityBadge = within(keywordList).getByTitle('Relevance score: 84%');
+    expect(humanEvaluationBadge).toHaveTextContent(/human evaluation\s*·\s*91%/);
+    expect(retrievalQualityBadge).toHaveTextContent(/retrieval quality\s*·\s*84%/);
+    const encodedDescription = encodeQueryValue(validEvaluationDescription);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/search?q=${encodedDescription}&limit=100&filter=${encodedDescription}`,
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+  });
+
+  it('does not show an extracted-keyword section when the API returns no keywords', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(makeResponse({ extractedKeywords: [] })), { status: 200 })));
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.type(screen.getByLabelText('Describe your research topic'), validResearchDescription);
+    await user.click(screen.getByRole('button', { name: 'Search' }));
+
+    expect(await screen.findByRole('heading', { name: 'Climate adaptation strategies' })).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Extracted keywords' })).not.toBeInTheDocument();
   });
 
   it('offers Google Scholar-style year choices and submits the selected year', async () => {
@@ -144,24 +175,26 @@ describe('App', () => {
     expect(screen.getByRole('option', { name: `Since ${currentYear - 1}` })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: `Since ${currentYear - 4}` })).toBeInTheDocument();
 
-    await user.type(screen.getByLabelText('Research topic'), 'climate adaptation');
+    await user.type(screen.getByLabelText('Describe your research topic'), validResearchDescription);
     await user.selectOptions(yearFilter, String(currentYear - 4));
     await user.click(screen.getByRole('button', { name: 'Search' }));
 
     expect(await screen.findByRole('heading', { name: 'Climate adaptation strategies' })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
-      `/api/search?q=climate+adaptation&limit=100&fromYear=${currentYear - 4}`,
+      `/api/search?q=${encodeQueryValue(validResearchDescription)}&limit=100&filter=${encodeQueryValue(validResearchDescription)}&fromYear=${currentYear - 4}`,
       expect.objectContaining({ signal: expect.anything() }),
     );
   });
 
-  it('shows the normal empty state with a ranking preference and returns focus to a new search', async () => {
+  it('shows the normal empty state and returns focus to a new search', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(makeResponse({ totalResults: 0, returnedResults: 0, results: [] })), { status: 200 })));
     const user = userEvent.setup();
     renderApp();
 
-    await user.type(screen.getByLabelText('Research topic'), 'unknown topic');
-    await user.type(screen.getByLabelText(/What should rank higher/), 'good model');
+    await user.type(
+      screen.getByLabelText('Describe your research topic'),
+      'unknown research topic involving several uncommon concepts without matching academic papers',
+    );
     await user.selectOptions(
       screen.getByRole('combobox', { name: 'Publication date' }),
       String(new Date().getFullYear() - 1),
@@ -169,8 +202,39 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Search' }));
     expect(await screen.findByText('No papers found for this search')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Start a new search' }));
-    expect(screen.getByLabelText('Research topic')).toHaveFocus();
-    expect(screen.getByLabelText(/What should rank higher/)).toHaveValue('');
+    expect(screen.getByLabelText('Describe your research topic')).toHaveFocus();
+    expect(screen.getByLabelText('Describe your research topic')).toHaveValue('');
     expect(screen.getByRole('combobox', { name: 'Publication date' })).toHaveDisplayValue('Any time');
+  });
+
+  it('requires at least ten words before submitting', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.type(screen.getByLabelText('Describe your research topic'), 'one two three four five six seven eight nine');
+    await user.click(screen.getByRole('button', { name: 'Search' }));
+
+    expect(screen.getByText('Enter at least 10 words (9/10).')).toBeInTheDocument();
+    expect(screen.getByLabelText('Describe your research topic')).toHaveFocus();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('runs the same search again after results are displayed', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(makeResponse()), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.type(screen.getByLabelText('Describe your research topic'), validResearchDescription);
+    await user.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByRole('heading', { name: 'Climate adaptation strategies' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Search' }));
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

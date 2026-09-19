@@ -39,7 +39,7 @@ curl "http://localhost:3000/api/search?q=machine%20learning&fromYear=2022&limit=
 curl "http://localhost:3000/api/search?q=machine%20learning&filter=human%20evaluation&fromYear=2022"
 ```
 
-The search endpoint caps `limit` at 100 and requests that number of OpenAlex works through its `/works` endpoint. `fromYear` limits OpenAlex candidates before optional Jev ranking; when `filter` is present, the API intentionally fetches and reranks 100 candidates regardless of `limit`. Abstracts are reconstructed from OpenAlex's inverted-index representation when available; works without abstracts remain in the result set.
+The search endpoint caps `limit` at 100 and requests that number of OpenAlex works through its `/works` endpoint. `fromYear` limits OpenAlex candidates before optional Jev ranking. When `filter` is present, the API extracts and deduplicates its ten highest-scoring English keywords, uses those single words as the OpenAlex query, and reranks 100 candidates against the original research description. The keywords are returned in `extractedKeywords`. The first such request downloads the q8 MiniLM model used by Transformers.js; later requests reuse the cached model. If an interrupted download leaves an unreadable cached ONNX file, the API removes only that model artifact and retries the download once. Abstracts are reconstructed from OpenAlex's inverted-index representation when available; works without abstracts remain in the result set.
 
 ## Workspace layout
 

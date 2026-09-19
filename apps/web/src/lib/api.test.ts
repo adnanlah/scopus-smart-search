@@ -8,6 +8,7 @@ describe('searchPapers', () => {
       requestedLimit: 10,
       totalResults: 1,
       returnedResults: 1,
+      extractedKeywords: [{ phrase: 'graph neural networks', score: 0.92 }],
       results: [{
         rank: 1,
         openAlexId: 'https://openalex.org/W1',
@@ -30,6 +31,7 @@ describe('searchPapers', () => {
     expect(fetch).toHaveBeenCalledWith('/api/search?q=graph+neural+networks&limit=100', expect.objectContaining({ signal: undefined }));
     expect(result.papers[0]).toMatchObject({ rank: 1, title: 'Graph neural networks', year: '2024', sourceType: 'journal', volume: '8', issue: '2', pageRange: '10-24', publicationDate: '2024-05-01', citedByCount: 12, openAccess: true, license: 'cc-by', semanticScore: 0.84 });
     expect(result.searchErrors).toEqual([]);
+    expect(result.extractedKeywords).toEqual([{ phrase: 'graph neural networks', score: 0.92 }]);
   });
 
   it('encodes the optional ranking preference', async () => {
