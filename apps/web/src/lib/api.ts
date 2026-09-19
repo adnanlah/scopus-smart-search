@@ -2,7 +2,8 @@ import type { SearchError, SearchResponse, WorkResult } from '@openalex/shared';
 
 export interface SearchParams {
   query: string;
-  filter?: string;
+  rankingPreference?: string;
+  fromYear?: number;
 }
 
 export interface Paper {
@@ -12,12 +13,17 @@ export interface Paper {
   authors: string[];
   year?: string;
   venue?: string;
+  sourceType?: string;
+  volume?: string;
+  issue?: string;
+  pageRange?: string;
   publicationDate?: string;
   abstract?: string;
   doi?: string;
   externalUrl?: string;
   citedByCount?: number;
   openAccess: boolean;
+  license?: string;
   semanticScore?: number;
 }
 
@@ -84,19 +90,25 @@ const toPaper = (result: WorkResult): Paper => ({
   authors: getAuthorNames(result),
   year: result.publication.coverDate?.slice(0, 4) ?? result.publication.publicationDate?.slice(0, 4),
   venue: result.publication.name,
+  sourceType: result.publication.sourceType,
+  volume: result.publication.volume,
+  issue: result.publication.issueIdentifier,
+  pageRange: result.publication.pageRange,
   publicationDate: result.publication.publicationDate ?? result.publication.coverDate,
   abstract: result.abstract?.trim() || undefined,
   doi: result.identifiers.doi,
   externalUrl: getPublicPaperUrl(result),
   citedByCount: result.metrics.citedByCount,
   openAccess: result.access.openAccess ?? false,
+  license: result.access.license,
   semanticScore: result.semanticScore,
 });
 
-export const searchPapers = async ({ query, filter }: SearchParams, signal?: AbortSignal): Promise<PaperSearchResult> => {
+export const searchPapers = async ({ query, rankingPreference, fromYear }: SearchParams, signal?: AbortSignal): Promise<PaperSearchResult> => {
   const params = new URLSearchParams({ q: query.trim(), limit: '100' });
-  const trimmedFilter = filter?.trim();
-  if (trimmedFilter) params.set('filter', trimmedFilter);
+  const trimmedRankingPreference = rankingPreference?.trim();
+  if (trimmedRankingPreference) params.set('filter', trimmedRankingPreference);
+  if (fromYear !== undefined) params.set('fromYear', String(fromYear));
   const response = await fetch(`${API_BASE_URL}/search?${params.toString()}`, { signal });
 
   const body: unknown = await response.json().catch(() => undefined);

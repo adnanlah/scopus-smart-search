@@ -2,8 +2,18 @@ export interface WorkAuthor {
   id?: string;
   name?: string;
   orcid?: string;
+  position?: 'first' | 'middle' | 'last';
+  corresponding?: boolean;
+  countries?: string[];
   affiliations: string[];
   raw?: Record<string, unknown>;
+}
+
+export interface WorkTopic {
+  name: string;
+  subfield?: string;
+  field?: string;
+  domain?: string;
 }
 
 export interface WorkAffiliation {
@@ -20,10 +30,17 @@ export interface WorkResult {
   openAlexId?: string;
   title?: string;
   abstract?: string;
+  workType?: string;
+  language?: string;
+  topics?: WorkTopic[];
+  keywords?: string[];
+  indexedIn?: string[];
+  isRetracted?: boolean;
   authors: WorkAuthor[];
   affiliations: WorkAffiliation[];
   publication: {
     name?: string;
+    sourceType?: string;
     volume?: string;
     issueIdentifier?: string;
     pageRange?: string;

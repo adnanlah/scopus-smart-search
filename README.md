@@ -13,12 +13,12 @@ TypeScript monorepo for searching OpenAlex works and presenting their available 
 ```powershell
 pnpm install
 Copy-Item apps/api/.env.example apps/api/.env
-# Set TYPESAFE_API_KEY in apps/api/.env to enable optional Jev semantic filtering.
+# Set TYPESAFE_API_KEY in apps/api/.env to enable optional Jev semantic reranking.
 # Optionally edit apps/api/.env and set OPENALEX_API_KEY
 pnpm dev
 ```
 
-The API environment belongs to `apps/api`. Keep `OPENALEX_API_KEY` and `TYPESAFE_API_KEY` server-side and do not expose them through frontend variables such as `VITE_*`. OpenAlex also supports anonymous API requests. When a semantic filter is provided, the API sends the first 100 OpenAlex works to Jev, keeps scores at or above 0.5, and sorts the retained works by relevance.
+The API environment belongs to `apps/api`. Keep `OPENALEX_API_KEY` and `TYPESAFE_API_KEY` server-side and do not expose them through frontend variables such as `VITE_*`. OpenAlex also supports anonymous API requests. When an AI ranking preference is provided through the backward-compatible `filter` parameter, the API scores the first 100 OpenAlex works individually with Jev and returns every candidate sorted by match probability.
 
 The API starts on `http://localhost:3000` by default. Start the Vite frontend in a second terminal with:
 
@@ -35,9 +35,11 @@ pnpm --filter @openalex/api dev
 ```bash
 curl "http://localhost:3000/health"
 curl "http://localhost:3000/api/search?q=machine%20learning&limit=10"
+curl "http://localhost:3000/api/search?q=machine%20learning&fromYear=2022&limit=10"
+curl "http://localhost:3000/api/search?q=machine%20learning&filter=human%20evaluation&fromYear=2022"
 ```
 
-The search endpoint caps `limit` at 100 and requests OpenAlex works through its `/works` endpoint. Abstracts are reconstructed from OpenAlex's inverted-index representation when available; works without abstracts remain in the result set.
+The search endpoint caps `limit` at 100 and requests that number of OpenAlex works through its `/works` endpoint. `fromYear` limits OpenAlex candidates before optional Jev ranking; when `filter` is present, the API intentionally fetches and reranks 100 candidates regardless of `limit`. Abstracts are reconstructed from OpenAlex's inverted-index representation when available; works without abstracts remain in the result set.
 
 ## Workspace layout
 

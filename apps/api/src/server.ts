@@ -8,20 +8,21 @@ import { OpenAlexClient, OpenAlexClientError } from '@openalex/openalex-client';
 import type { SearchResponse } from '@openalex/shared';
 import { z } from 'zod';
 import { loadConfig, type AppConfig } from './config.js';
-import { JEV_MODEL, JevSemanticFilter, TypeSafeJevClient, type SemanticFilter } from './jev.js';
+import { JEV_MODEL, JevSemanticRanker, TypeSafeJevClient, type SemanticRanker } from './jev.js';
 
 const searchQuerySchema = z.object({
   q: z.string().trim().min(1, 'Query parameter q is required.').max(2_000, 'Query is too long.'),
   filter: z.string().trim().max(2_000, 'Filter is too long.').optional(),
+  fromYear: z.coerce.number().int().min(1800).max(new Date().getFullYear()).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(100),
 });
 
 const errorBody = (code: string, message: string) => ({ error: { code, message } });
 
-const createSemanticFilter = (config: AppConfig, injected?: SemanticFilter): SemanticFilter | undefined => {
+const createSemanticRanker = (config: AppConfig, injected?: SemanticRanker): SemanticRanker | undefined => {
   if (injected) return injected;
   if (!config.typesafeApiKey) return undefined;
-  return new JevSemanticFilter(new TypeSafeJevClient(new TypeSafeClient({
+  return new JevSemanticRanker(new TypeSafeJevClient(new TypeSafeClient({
     apiKey: config.typesafeApiKey,
     defaultModel: JEV_MODEL,
   })));
@@ -29,7 +30,7 @@ const createSemanticFilter = (config: AppConfig, injected?: SemanticFilter): Sem
 
 export interface ServerDependencies {
   client?: OpenAlexClient;
-  semanticFilter?: SemanticFilter;
+  semanticRanker?: SemanticRanker;
   config?: AppConfig;
 }
 
@@ -42,7 +43,7 @@ export const buildServer = async (dependencies: ServerDependencies = {}): Promis
     timeoutMs: config.requestTimeoutMs,
     maxRetries: config.maxRetries,
   });
-  const semanticFilter = createSemanticFilter(config, dependencies.semanticFilter);
+  const semanticRanker = createSemanticRanker(config, dependencies.semanticRanker);
 
   await server.register(cors, { origin: config.corsOrigin === '*' ? true : config.corsOrigin.split(',').map((origin) => origin.trim()) });
 
@@ -54,19 +55,22 @@ export const buildServer = async (dependencies: ServerDependencies = {}): Promis
       return reply.code(400).send(errorBody('INVALID_QUERY', parsed.error.issues.map((issue) => issue.message).join(' ')));
     }
     try {
-      const filter = parsed.data.filter || undefined;
-      const response = await client.search(parsed.data.q, filter ? 100 : parsed.data.limit);
-      if (!filter) return response;
-      if (!semanticFilter) {
-        return reply.code(503).send(errorBody('TYPESAFE_NOT_CONFIGURED', 'Semantic filtering is not configured on the search service.'));
+      const rankingPreference = parsed.data.filter || undefined;
+      const response = await client.search(parsed.data.q, {
+        limit: rankingPreference ? 100 : parsed.data.limit,
+        fromPublicationYear: parsed.data.fromYear,
+      });
+      if (!rankingPreference) return response;
+      if (!semanticRanker) {
+        return reply.code(503).send(errorBody('TYPESAFE_NOT_CONFIGURED', 'AI reranking is not configured on the search service.'));
       }
       try {
-        const filteredResults = await semanticFilter.filter(response.results, filter);
-        return { ...response, returnedResults: filteredResults.length, results: filteredResults };
+        const rankedResults = await semanticRanker.rank(response.results, parsed.data.q, rankingPreference);
+        return { ...response, returnedResults: rankedResults.length, results: rankedResults };
       } catch (error) {
         const status = typeof error === 'object' && error !== null && 'status' in error && error.status === 429 ? 429 : 502;
         request.log.error(error);
-        return reply.code(status).send(errorBody('TYPESAFE_REQUEST_FAILED', 'Semantic filtering could not be completed.'));
+        return reply.code(status).send(errorBody('TYPESAFE_REQUEST_FAILED', 'AI reranking could not be completed.'));
       }
     } catch (error) {
       if (error instanceof OpenAlexClientError) {

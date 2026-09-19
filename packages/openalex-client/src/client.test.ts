@@ -10,15 +10,44 @@ describe('OpenAlexClient', () => {
   it('builds a works search capped at 100 results and sends an optional bearer token', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ meta: { count: 0 }, results: [] }));
     const client = new OpenAlexClient({ apiKey: 'secret', baseUrl: 'https://example.test' });
-    await client.search('heart attack', 10);
+    await client.search('heart attack', { limit: 10 });
     const [input, init] = fetchMock.mock.calls[0] ?? [];
     const url = new URL(String(input));
     expect(url.pathname).toBe('/works');
     expect(url.searchParams.get('search')).toBe('heart attack');
-    expect(url.searchParams.get('per_page')).toBe('100');
+    expect(url.searchParams.get('per_page')).toBe('10');
     expect(url.searchParams.get('page')).toBe('1');
-    expect(url.searchParams.get('select')).toContain('abstract_inverted_index');
+    expect(url.searchParams.get('filter')).toBeNull();
+    const selectedFields = url.searchParams.get('select')?.split(',') ?? [];
+    expect(selectedFields).toEqual(expect.arrayContaining([
+      'abstract_inverted_index',
+      'type',
+      'language',
+      'topics',
+      'keywords',
+      'indexed_in',
+      'is_retracted',
+      'cited_by_count',
+    ]));
+    expect(selectedFields).not.toEqual(expect.arrayContaining([
+      'citation_normalized_percentile',
+      'cited_by_percentile_year',
+      'fwci',
+    ]));
     expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer secret');
+    fetchMock.mockRestore();
+  });
+
+  it('sends the selected publication year as an OpenAlex date filter', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ meta: { count: 0 }, results: [] }));
+    const client = new OpenAlexClient({ baseUrl: 'https://example.test' });
+
+    await client.search('heart attack', { limit: 25, fromPublicationYear: 2022 });
+
+    const [input] = fetchMock.mock.calls[0] ?? [];
+    const url = new URL(String(input));
+    expect(url.searchParams.get('per_page')).toBe('25');
+    expect(url.searchParams.get('filter')).toBe('from_publication_date:2022-01-01');
     fetchMock.mockRestore();
   });
 
@@ -32,7 +61,7 @@ describe('OpenAlexClient', () => {
         'x-ratelimit-credits-used': '1',
       }));
     const client = new OpenAlexClient({ baseUrl: 'https://example.test', maxRetries: 1 });
-    const result = await client.search('recovery', 1);
+    const result = await client.search('recovery', { limit: 1 });
     expect(result.results[0]?.title).toBe('Recovered work');
     expect(result.quota).toMatchObject({ limit: 10000, remaining: 9999, creditsUsed: 1 });
     expect(fetchMock).toHaveBeenCalledTimes(2);

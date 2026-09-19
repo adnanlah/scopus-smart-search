@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { WorkResult } from '@openalex/shared';
-import { JevSemanticFilter } from './jev.js';
+import { JEV_RANKING_CONCURRENCY, JevSemanticRanker } from './jev.js';
 
-const makeWork = (rank: number, title: string): WorkResult => ({
+const makeWork = (rank: number, title: string, abstract: string | undefined = `${title} abstract`): WorkResult => ({
   rank,
   title,
-  abstract: `${title} abstract`,
+  abstract,
   authors: [],
   affiliations: [],
   publication: { name: 'Research Journal', publicationDate: '2024-01-01' },
@@ -16,58 +16,80 @@ const makeWork = (rank: number, title: string): WorkResult => ({
   searchMetadata: {},
 });
 
-describe('JevSemanticFilter', () => {
-  it('evaluates every work in one request and filters and ranks by noul probability', async () => {
+describe('JevSemanticRanker', () => {
+  it('scores candidates independently and retains every work with stable tie ordering', async () => {
     const works = [
-      makeWork(1, 'High relevance'),
-      makeWork(2, 'Borderline relevance'),
-      makeWork(3, 'Low relevance'),
-      makeWork(4, 'High relevance tie'),
+      { ...makeWork(1, 'Low match'), abstract: undefined },
+      makeWork(2, 'High match'),
+      makeWork(3, 'Very low match'),
+      makeWork(4, 'High match tie'),
     ];
-    works[0] = { ...works[0]!, abstract: 'A'.repeat(5_000) };
-    const client = {
-      systemOne: vi.fn().mockResolvedValue({
-        answers: {
-          work_0: { noul: 0.9 },
-          work_1: { noul: 0.5 },
-          work_2: { noul: 0.49 },
-          work_3: { noul: 0.9 },
-        },
-      }),
+    const scores: Record<string, number> = {
+      'Low match': 0.1,
+      'High match': 0.4,
+      'Very low match': 0.05,
+      'High match tie': 0.4,
     };
-    const filter = new JevSemanticFilter(client);
+    const client = {
+      systemOne: vi.fn().mockImplementation(async (request: { state: { paper: { title: string } } }) => ({
+        answers: { is_useful_match: { noul: scores[request.state.paper.title] } },
+      })),
+    };
 
-    const result = await filter.filter(works, 'papers evaluating human judgments');
+    const result = await new JevSemanticRanker(client).rank(
+      works,
+      'machine learning meta-learning',
+      'good model',
+    );
 
-    expect(client.systemOne).toHaveBeenCalledTimes(1);
-    const request = client.systemOne.mock.calls[0]![0];
-    expect(request.model).toBe('jev-latest');
-    expect(request.state.filter_instruction).toBe('papers evaluating human judgments');
-    expect(request.state.works).toHaveLength(4);
-    expect(request.state.works[0]!.abstract).toBe(works[0]!.abstract);
-    expect(request.questions.work_0).toMatchObject({
-      instructions: expect.stringContaining('strict inclusion rule'),
-      criteria: {
-        true: ['The title or abstract provides sufficient explicit evidence that the', 'work satisfies the user’s filter instruction and all important conditions.'],
-        false: ['The work is only topically related, satisfies only part of the instruction,', 'or would require inferring an unstated property from indirect clues.'],
+    expect(client.systemOne).toHaveBeenCalledTimes(4);
+    const requests = client.systemOne.mock.calls.map(([request]) => request);
+    expect(requests[0]).toMatchObject({
+      model: 'jev-latest',
+      state: {
+        research_topic: 'machine learning meta-learning',
+        ranking_preference: 'good model',
+        paper: { title: 'Low match' },
       },
     });
-    expect(request.questions.work_0.instructions).toContain('works[0]');
-    expect(request.questions.work_0.instructions).toContain('works[0].title');
-    expect(request.questions.work_0.instructions).toContain('works[0].abstract');
-    expect(request.questions.work_3.instructions).toContain('works[3]');
-    expect(request.questions.work_3.instructions).toContain('works[3].title');
-    expect(request.questions.work_3.instructions).toContain('works[3].abstract');
-    expect(request.questions.work_0.instructions).not.toBe(request.questions.work_3.instructions);
-    expect(Object.keys(request.questions)).toEqual(['work_0', 'work_1', 'work_2', 'work_3']);
-    expect(result.map((work) => work.title)).toEqual(['High relevance', 'High relevance tie', 'Borderline relevance']);
-    expect(result.map((work) => work.semanticScore)).toEqual([0.9, 0.9, 0.5]);
+    expect(requests[0].questions.is_useful_match.instructions).toContain('not only its title and abstract');
+    expect(requests[0].questions.is_useful_match.instructions).toContain('Do not infer quality');
+    expect(requests[0].questions.is_useful_match.instructions).toContain('not a mandatory inclusion rule');
+    expect(requests.map((request) => request.state.paper.title)).toEqual(works.map((work) => work.title));
+    expect(result.map((work) => work.title)).toEqual(['High match', 'High match tie', 'Low match', 'Very low match']);
+    expect(result.map((work) => work.semanticScore)).toEqual([0.4, 0.4, 0.1, 0.05]);
+  });
+
+  it('limits concurrent Jev requests', async () => {
+    let activeRequests = 0;
+    let maximumActiveRequests = 0;
+    const client = {
+      systemOne: vi.fn().mockImplementation(async () => {
+        activeRequests += 1;
+        maximumActiveRequests = Math.max(maximumActiveRequests, activeRequests);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        activeRequests -= 1;
+        return { answers: { is_useful_match: { noul: 0.5 } } };
+      }),
+    };
+    const works = Array.from(
+      { length: JEV_RANKING_CONCURRENCY + 5 },
+      (_, index) => makeWork(index + 1, `Work ${index + 1}`),
+    );
+
+    await new JevSemanticRanker(client).rank(works, 'topic', 'preference');
+
+    expect(maximumActiveRequests).toBeGreaterThan(1);
+    expect(maximumActiveRequests).toBeLessThanOrEqual(JEV_RANKING_CONCURRENCY);
   });
 
   it('rejects malformed Jev scores instead of silently changing results', async () => {
-    const client = { systemOne: vi.fn().mockResolvedValue({ answers: { work_0: { noul: 2 } } }) };
-    const filter = new JevSemanticFilter(client);
+    const client = {
+      systemOne: vi.fn().mockResolvedValue({ answers: { is_useful_match: { noul: 2 } } }),
+    };
 
-    await expect(filter.filter([makeWork(1, 'Invalid')], 'test')).rejects.toThrow('invalid relevance score');
+    await expect(
+      new JevSemanticRanker(client).rank([makeWork(1, 'Invalid')], 'topic', 'preference'),
+    ).rejects.toThrow('invalid relevance score');
   });
 });

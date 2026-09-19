@@ -1,4 +1,4 @@
-import type { WorkAffiliation, WorkAuthor, WorkResult } from '@openalex/shared';
+import type { WorkAffiliation, WorkAuthor, WorkResult, WorkTopic } from '@openalex/shared';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -45,13 +45,24 @@ export const reconstructAbstract = (value: unknown): string | undefined => {
 const parseAuthor = (value: unknown): WorkAuthor => {
   const authorship = asRecord(value);
   const author = asRecord(authorship.author);
-  const affiliations = asArray(authorship.institutions)
+  const institutions = asArray(authorship.institutions);
+  const affiliations = institutions
     .map((institution) => cleanString(asRecord(institution).id))
     .filter((id): id is string => Boolean(id));
+  const countries = [
+    ...asArray(authorship.countries),
+    ...institutions.map((institution) => asRecord(institution).country_code),
+  ]
+    .map(cleanString)
+    .filter((country): country is string => Boolean(country));
+  const position = cleanString(authorship.author_position);
   return {
     id: cleanString(author.id),
     name: cleanString(author.display_name),
     orcid: stripIdentifierUrl(author.orcid),
+    position: position === 'first' || position === 'middle' || position === 'last' ? position : undefined,
+    corresponding: typeof authorship.is_corresponding === 'boolean' ? authorship.is_corresponding : undefined,
+    countries: [...new Set(countries)],
     affiliations,
     raw: authorship,
   };
@@ -71,12 +82,24 @@ const parseAffiliations = (authorships: unknown[]): WorkAffiliation[] => {
         id,
         name,
         city: cleanString(geo.city),
-        country: cleanString(geo.country_code),
+        country: cleanString(institution.country_code ?? geo.country_code),
         raw: institution,
       });
     }
   }
   return [...affiliations.values()];
+};
+
+const parseTopic = (value: unknown): WorkTopic | undefined => {
+  const topic = asRecord(value);
+  const name = cleanString(topic.display_name);
+  if (!name) return undefined;
+  return {
+    name,
+    subfield: cleanString(asRecord(topic.subfield).display_name),
+    field: cleanString(asRecord(topic.field).display_name),
+    domain: cleanString(asRecord(topic.domain).display_name),
+  };
 };
 
 const parsePageRange = (biblio: JsonRecord): string | undefined => {
@@ -112,21 +135,31 @@ export const parseWork = (value: unknown, rank: number): WorkResult => {
     openAlexId,
     title: cleanString(work.display_name ?? work.title),
     abstract: reconstructAbstract(work.abstract_inverted_index),
+    workType: cleanString(work.type),
+    language: cleanString(work.language),
+    topics: asArray(work.topics).map(parseTopic).filter((topic): topic is WorkTopic => Boolean(topic)),
+    keywords: asArray(work.keywords)
+      .map((keyword) => cleanString(asRecord(keyword).display_name))
+      .filter((keyword): keyword is string => Boolean(keyword)),
+    indexedIn: asArray(work.indexed_in).map(cleanString).filter((index): index is string => Boolean(index)),
+    isRetracted: typeof work.is_retracted === 'boolean' ? work.is_retracted : undefined,
     authors: authorships.map(parseAuthor).filter((author) => author.name || author.id),
     affiliations: parseAffiliations(authorships),
     publication: {
       name: cleanString(source.display_name),
+      sourceType: cleanString(source.type),
       volume: cleanString(asRecord(work.biblio).volume),
       issueIdentifier: cleanString(asRecord(work.biblio).issue),
       pageRange: parsePageRange(asRecord(work.biblio)),
       coverDate: cleanString(work.publication_date),
       publicationDate: cleanString(work.publication_date),
       issn: cleanString(source.issn_l ?? asArray(source.issn).find((value) => typeof value === 'string')),
+      publisher: cleanString(source.host_organization_name),
     },
     identifiers: { doi, pubmedId: pmid, pmcid },
     metrics: { citedByCount: numberValue(work.cited_by_count) },
     access: {
-      openAccess: openAccess.is_oa === true,
+      openAccess: typeof openAccess.is_oa === 'boolean' ? openAccess.is_oa : undefined,
       accessType: cleanString(openAccess.oa_status),
       license: cleanString(primaryLocation.license),
     },

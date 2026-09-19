@@ -12,6 +12,11 @@ export interface OpenAlexClientOptions {
   maxRetries?: number;
 }
 
+export interface OpenAlexSearchOptions {
+  limit?: number;
+  fromPublicationYear?: number;
+}
+
 interface ResponseMetadata {
   quota?: QuotaInfo;
 }
@@ -118,14 +123,18 @@ export class OpenAlexClient {
     throw lastError instanceof Error ? lastError : new OpenAlexClientError('OpenAlex request failed.', { code: 'UNKNOWN' });
   }
 
-  public async search(query: string, count = 100): Promise<SearchResponse> {
-    const requestedLimit = Math.min(Math.max(Math.trunc(count), 1), 100);
-    const response = await this.request<{ meta?: { count?: number }; results?: unknown[] }>('/works', {
+  public async search(query: string, options: OpenAlexSearchOptions = {}): Promise<SearchResponse> {
+    const requestedLimit = Math.min(Math.max(Math.trunc(options.limit ?? 100), 1), 100);
+    const searchParams: Record<string, string> = {
       search: query,
       page: '1',
-      per_page: '100',
-      select: 'id,display_name,title,doi,publication_date,publication_year,biblio,abstract_inverted_index,authorships,primary_location,open_access,cited_by_count,ids',
-    });
+      per_page: String(requestedLimit),
+      select: 'id,display_name,title,doi,type,language,publication_date,publication_year,biblio,abstract_inverted_index,authorships,primary_location,open_access,cited_by_count,topics,keywords,indexed_in,is_retracted,ids',
+    };
+    if (options.fromPublicationYear !== undefined) {
+      searchParams.filter = `from_publication_date:${options.fromPublicationYear}-01-01`;
+    }
+    const response = await this.request<{ meta?: { count?: number }; results?: unknown[] }>('/works', searchParams);
     const results = (response.data.results ?? []).map((work, index) => parseWork(work, index + 1));
     return {
       query,

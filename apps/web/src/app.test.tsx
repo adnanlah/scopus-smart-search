@@ -11,10 +11,10 @@ const paper = {
   abstract: 'A'.repeat(500),
   authors: [{ name: 'A Researcher', affiliations: [] }],
   affiliations: [],
-  publication: { name: 'Research Journal', coverDate: '2023-01-01' },
+  publication: { name: 'Research Journal', sourceType: 'journal', volume: '12', issueIdentifier: '3', pageRange: '45-61', coverDate: '2023-01-01' },
   identifiers: { doi: '10.1000/example' },
   metrics: { citedByCount: 12 },
-  access: { openAccess: true },
+  access: { openAccess: true, license: 'cc-by' },
   links: { openalex: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/example' },
   searchMetadata: {},
 };
@@ -45,10 +45,17 @@ describe('App', () => {
     const user = userEvent.setup();
     renderApp();
 
+    expect(screen.queryByText('Search by topic and describe what you want to prioritize.')).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/What should rank higher/)).toBeInTheDocument();
     await user.type(screen.getByLabelText('Research topic'), 'climate adaptation');
     await user.keyboard('{Enter}');
 
     expect(await screen.findByRole('heading', { name: 'Climate adaptation strategies' })).toBeInTheDocument();
+    expect(screen.getByText('Research Journal · 2023 · Vol. 12 · Issue 3 · pp. 45-61')).toBeInTheDocument();
+    expect(screen.getByText('Journal')).toBeInTheDocument();
+    expect(screen.getByText('Open access')).toBeInTheDocument();
+    expect(screen.getByText('CC BY')).toBeInTheDocument();
+    expect(screen.getByText('12 citations')).toBeInTheDocument();
     expect(screen.getByText('A Researcher')).toBeInTheDocument();
     expect(screen.getByText('Read full abstract')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /doi: 10.1000\/example/i })).toHaveAttribute('href', 'https://doi.org/10.1000/example');
@@ -70,7 +77,7 @@ describe('App', () => {
     expect(screen.queryByText(/abstract access/i)).not.toBeInTheDocument();
   });
 
-  it('changes the displayed count without refetching the 100-result batch', async () => {
+  it('shows the complete returned batch without frontend pagination', async () => {
     const papers = Array.from({ length: 100 }, (_, index) => ({
       ...paper,
       rank: index + 1,
@@ -90,23 +97,21 @@ describe('App', () => {
     await user.keyboard('{Enter}');
 
     expect(await screen.findByRole('heading', { name: 'Climate paper 1' })).toBeInTheDocument();
-    expect(screen.getAllByRole('article')).toHaveLength(10);
-    expect(screen.getByText('250 papers · 10 shown')).toBeInTheDocument();
-
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Results per search' }), '25');
-
-    expect(screen.getAllByRole('article')).toHaveLength(25);
-    expect(screen.getByText('250 papers · 25 shown')).toBeInTheDocument();
+    expect(screen.getAllByRole('article')).toHaveLength(100);
+    expect(screen.getByText('100 papers · 250 matches')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Publication date' })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('submits the semantic filter and displays Jev-ranked results', async () => {
+  it('submits the ranking preference and displays every Jev-ranked candidate', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(makeResponse({
       totalResults: 4,
-      returnedResults: 2,
+      returnedResults: 4,
       results: [
         { ...paper, title: 'Highly relevant work', semanticScore: 0.8734 },
         { ...paper, openAlexId: 'https://openalex.org/W2', title: 'Borderline relevant work', semanticScore: 0.5 },
+        { ...paper, openAlexId: 'https://openalex.org/W3', title: 'Low relevance work', semanticScore: 0.12 },
+        { ...paper, openAlexId: 'https://openalex.org/W4', title: 'Very low relevance work', semanticScore: 0.03 },
       ],
     })), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
@@ -114,26 +119,58 @@ describe('App', () => {
     renderApp();
 
     await user.type(screen.getByLabelText('Research topic'), 'climate adaptation');
-    await user.type(screen.getByLabelText(/Semantic filter/), 'human evaluation');
+    await user.type(screen.getByLabelText(/What should rank higher/), 'human evaluation');
     await user.click(screen.getByRole('button', { name: 'Search' }));
 
     expect(await screen.findByRole('heading', { name: 'Highly relevant work' })).toBeInTheDocument();
     expect(screen.getByText('Borderline relevant work')).toBeInTheDocument();
-    expect(screen.queryByText('Low relevance work')).not.toBeInTheDocument();
-    expect(screen.getByText('Noul probability: 0.8734')).toBeInTheDocument();
-    expect(screen.getByText('2 relevant papers · 2 shown from 4 OpenAlex results')).toBeInTheDocument();
+    expect(screen.getByText('Low relevance work')).toBeInTheDocument();
+    expect(screen.getByText('Very low relevance work')).toBeInTheDocument();
+    expect(screen.getByText('AI match: 87%')).toBeInTheDocument();
+    expect(screen.getByText('4 papers ranked · 4 matches')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith('/api/search?q=climate+adaptation&limit=100&filter=human+evaluation', expect.objectContaining({ signal: expect.anything() }));
   });
 
-  it('shows an empty state and returns focus to a new search', async () => {
+  it('offers Google Scholar-style year choices and submits the selected year', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(makeResponse()), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    const currentYear = new Date().getFullYear();
+    renderApp();
+
+    const yearFilter = screen.getByRole('combobox', { name: 'Publication date' });
+    expect(yearFilter).toHaveDisplayValue('Any time');
+    expect(screen.getByRole('option', { name: `Since ${currentYear}` })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: `Since ${currentYear - 1}` })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: `Since ${currentYear - 4}` })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Research topic'), 'climate adaptation');
+    await user.selectOptions(yearFilter, String(currentYear - 4));
+    await user.click(screen.getByRole('button', { name: 'Search' }));
+
+    expect(await screen.findByRole('heading', { name: 'Climate adaptation strategies' })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/search?q=climate+adaptation&limit=100&fromYear=${currentYear - 4}`,
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+  });
+
+  it('shows the normal empty state with a ranking preference and returns focus to a new search', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(makeResponse({ totalResults: 0, returnedResults: 0, results: [] })), { status: 200 })));
     const user = userEvent.setup();
     renderApp();
 
     await user.type(screen.getByLabelText('Research topic'), 'unknown topic');
-    await user.keyboard('{Enter}');
+    await user.type(screen.getByLabelText(/What should rank higher/), 'good model');
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Publication date' }),
+      String(new Date().getFullYear() - 1),
+    );
+    await user.click(screen.getByRole('button', { name: 'Search' }));
     expect(await screen.findByText('No papers found for this search')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Start a new search' }));
     expect(screen.getByLabelText('Research topic')).toHaveFocus();
+    expect(screen.getByLabelText(/What should rank higher/)).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: 'Publication date' })).toHaveDisplayValue('Any time');
   });
 });

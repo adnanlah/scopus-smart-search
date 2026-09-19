@@ -60,7 +60,10 @@ describe('API server', () => {
     server = await buildServer({ client: client as never, config });
     const result = await server.inject({ method: 'GET', url: '/api/search?q=machine+learning' });
     expect(result.statusCode).toBe(200);
-    expect(client.search).toHaveBeenCalledWith('machine learning', 100);
+    expect(client.search).toHaveBeenCalledWith('machine learning', {
+      limit: 100,
+      fromPublicationYear: undefined,
+    });
   });
 
   it('returns a client search response', async () => {
@@ -68,23 +71,59 @@ describe('API server', () => {
     server = await buildServer({ client: client as never, config });
     const result = await server.inject({ method: 'GET', url: '/api/search?q=test+query&limit=2' });
     expect(result.statusCode).toBe(200);
-    expect(client.search).toHaveBeenCalledWith('test query', 2);
+    expect(client.search).toHaveBeenCalledWith('test query', {
+      limit: 2,
+      fromPublicationYear: undefined,
+    });
   });
 
-  it('runs Jev after fetching the full OpenAlex candidate batch', async () => {
-    const client = { search: vi.fn().mockResolvedValue({ ...response, requestedLimit: 100 }) };
-    const semanticFilter = { filter: vi.fn().mockResolvedValue([{ ...work, semanticScore: 0.87 }]) };
-    server = await buildServer({ client: client as never, semanticFilter, config });
+  it('validates and forwards the publication year to OpenAlex', async () => {
+    const client = { search: vi.fn().mockResolvedValue(response) };
+    server = await buildServer({ client: client as never, config });
 
-    const result = await server.inject({ method: 'GET', url: '/api/search?q=test+query&filter=human+evaluations&limit=10' });
+    const result = await server.inject({ method: 'GET', url: '/api/search?q=test+query&fromYear=2022' });
 
     expect(result.statusCode).toBe(200);
-    expect(client.search).toHaveBeenCalledWith('test query', 100);
-    expect(semanticFilter.filter).toHaveBeenCalledWith([work], 'human evaluations');
+    expect(client.search).toHaveBeenCalledWith('test query', {
+      limit: 100,
+      fromPublicationYear: 2022,
+    });
+  });
+
+  it('rejects publication years later than the current year', async () => {
+    const client = { search: vi.fn().mockResolvedValue(response) };
+    server = await buildServer({ client: client as never, config });
+
+    const result = await server.inject({
+      method: 'GET',
+      url: `/api/search?q=test&fromYear=${new Date().getFullYear() + 1}`,
+    });
+
+    expect(result.statusCode).toBe(400);
+    expect(result.json().error.code).toBe('INVALID_QUERY');
+    expect(client.search).not.toHaveBeenCalled();
+  });
+
+  it('runs Jev ranking after fetching the full OpenAlex candidate batch', async () => {
+    const client = { search: vi.fn().mockResolvedValue({ ...response, requestedLimit: 100 }) };
+    const semanticRanker = { rank: vi.fn().mockResolvedValue([{ ...work, semanticScore: 0.87 }]) };
+    server = await buildServer({ client: client as never, semanticRanker, config });
+
+    const result = await server.inject({
+      method: 'GET',
+      url: '/api/search?q=test+query&filter=human+evaluations&fromYear=2022&limit=10',
+    });
+
+    expect(result.statusCode).toBe(200);
+    expect(client.search).toHaveBeenCalledWith('test query', {
+      limit: 100,
+      fromPublicationYear: 2022,
+    });
+    expect(semanticRanker.rank).toHaveBeenCalledWith([work], 'test query', 'human evaluations');
     expect(result.json()).toMatchObject({ totalResults: 2, returnedResults: 1, results: [{ semanticScore: 0.87 }] });
   });
 
-  it('returns a configuration error when semantic filtering is requested without a Jev key', async () => {
+  it('returns a configuration error when AI reranking is requested without a Jev key', async () => {
     const client = { search: vi.fn().mockResolvedValue(response) };
     server = await buildServer({ client: client as never, config });
 
@@ -96,12 +135,12 @@ describe('API server', () => {
 
   it('maps Jev failures without exposing provider details', async () => {
     const client = { search: vi.fn().mockResolvedValue(response) };
-    const semanticFilter = { filter: vi.fn().mockRejectedValue(new Error('provider detail')) };
-    server = await buildServer({ client: client as never, semanticFilter, config });
+    const semanticRanker = { rank: vi.fn().mockRejectedValue(new Error('provider detail')) };
+    server = await buildServer({ client: client as never, semanticRanker, config });
 
     const result = await server.inject({ method: 'GET', url: '/api/search?q=test&filter=human+evaluations' });
 
     expect(result.statusCode).toBe(502);
-    expect(result.json()).toEqual({ error: { code: 'TYPESAFE_REQUEST_FAILED', message: 'Semantic filtering could not be completed.' } });
+    expect(result.json()).toEqual({ error: { code: 'TYPESAFE_REQUEST_FAILED', message: 'AI reranking could not be completed.' } });
   });
 });

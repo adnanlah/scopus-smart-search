@@ -15,10 +15,10 @@ describe('searchPapers', () => {
         abstract: 'An abstract.',
         authors: [{ name: 'Ada Lovelace', affiliations: [] }],
         affiliations: [],
-        publication: { name: 'Research Journal', coverDate: '2024-05-01' },
+        publication: { name: 'Research Journal', sourceType: 'journal', volume: '8', issueIdentifier: '2', pageRange: '10-24', coverDate: '2024-05-01' },
         identifiers: { doi: '10.1000/example' },
         metrics: { citedByCount: 12 },
-        access: { openAccess: true },
+        access: { openAccess: true, license: 'cc-by' },
         links: { openalex: 'https://openalex.org/W1' },
         searchMetadata: {},
         semanticScore: 0.84,
@@ -28,11 +28,11 @@ describe('searchPapers', () => {
 
     const result = await searchPapers({ query: '  graph neural networks ' });
     expect(fetch).toHaveBeenCalledWith('/api/search?q=graph+neural+networks&limit=100', expect.objectContaining({ signal: undefined }));
-    expect(result.papers[0]).toMatchObject({ rank: 1, title: 'Graph neural networks', year: '2024', publicationDate: '2024-05-01', citedByCount: 12, openAccess: true, semanticScore: 0.84 });
+    expect(result.papers[0]).toMatchObject({ rank: 1, title: 'Graph neural networks', year: '2024', sourceType: 'journal', volume: '8', issue: '2', pageRange: '10-24', publicationDate: '2024-05-01', citedByCount: 12, openAccess: true, license: 'cc-by', semanticScore: 0.84 });
     expect(result.searchErrors).toEqual([]);
   });
 
-  it('encodes the optional semantic filter', async () => {
+  it('encodes the optional ranking preference', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       query: 'graph neural networks',
       requestedLimit: 100,
@@ -42,9 +42,13 @@ describe('searchPapers', () => {
       errors: [],
     }), { status: 200 })));
 
-    await searchPapers({ query: 'graph neural networks', filter: 'human evaluation & recall' });
+    await searchPapers({
+      query: 'graph neural networks',
+      rankingPreference: 'human evaluation & recall',
+      fromYear: 2022,
+    });
 
-    expect(fetch).toHaveBeenCalledWith('/api/search?q=graph+neural+networks&limit=100&filter=human+evaluation+%26+recall', expect.objectContaining({ signal: undefined }));
+    expect(fetch).toHaveBeenCalledWith('/api/search?q=graph+neural+networks&limit=100&filter=human+evaluation+%26+recall&fromYear=2022', expect.objectContaining({ signal: undefined }));
   });
 
   it('surfaces backend error messages', async () => {
