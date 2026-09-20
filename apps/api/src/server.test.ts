@@ -57,18 +57,18 @@ describe('API server', () => {
     expect(result.json().error.code).toBe('INVALID_QUERY');
   });
 
-  it('requires at least ten words when a search description is provided', async () => {
+  it('requires at least seven words when a search description is provided', async () => {
     const client = { search: vi.fn().mockResolvedValue(response) };
     server = await buildServer({ client: client as never, config });
 
     const result = await server.inject({
       method: 'GET',
-      url: '/api/search?q=short&filter=one+two+three+four+five+six+seven+eight+nine',
+      url: '/api/search?q=short&filter=one+two+three+four+five+six',
     });
 
     expect(result.statusCode).toBe(400);
     expect(result.json()).toEqual({
-      error: { code: 'INVALID_QUERY', message: 'Search description must contain at least 10 words.' },
+      error: { code: 'INVALID_QUERY', message: 'Search description must contain at least 7 words.' },
     });
     expect(client.search).not.toHaveBeenCalled();
   });

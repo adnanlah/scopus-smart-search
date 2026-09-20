@@ -109,8 +109,8 @@ export const SearchForm = ({ isFetching, onSubmit, resetKey }: SearchFormProps) 
       </div>
 
       <div className="flex flex-col gap-4 pt-1 sm:flex-row sm:items-end sm:justify-between">
-        <div className="grid flex-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-2 sm:max-w-52">
+        <div className="flex flex-1 flex-row gap-4">
+          <div className="min-w-0 max-w-44 flex-1 space-y-2">
             <Label htmlFor="journal-quality">SJR quartile</Label>
             <Select
               id="journal-quality"
@@ -125,7 +125,7 @@ export const SearchForm = ({ isFetching, onSubmit, resetKey }: SearchFormProps) 
               ))}
             </Select>
           </div>
-          <div className="space-y-2 sm:max-w-52">
+          <div className="min-w-0 max-w-44 flex-1 space-y-2">
             <Label htmlFor="publication-year">Publication date</Label>
             <Select
               id="publication-year"
