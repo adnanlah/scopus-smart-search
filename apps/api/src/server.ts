@@ -9,10 +9,18 @@ import {
   SEARCH_MIN_WORDS,
   countSearchWords,
   type ExtractedKeyword,
+  type SearchConstraint,
   type SearchResponse,
 } from '@openalex/shared';
 import { z } from 'zod';
 import { loadConfig, type AppConfig } from './config.js';
+import {
+  composeOpenAlexFilters,
+  JEV_CONSTRAINT_THRESHOLD,
+  JevConstraintInferer,
+  unavailableInterpretation,
+  type ConstraintInferer,
+} from './constraints.js';
 import { JEV_MODEL, JevSemanticRanker, TypeSafeJevClient, type SemanticRanker } from './jev.js';
 import { KeyBertKeywordExtractor, selectSearchKeywords, type KeywordExtractor } from './keyword-extractor.js';
 
@@ -32,21 +40,50 @@ const searchQuerySchema = z.object({
 
 const errorBody = (code: string, message: string) => ({ error: { code, message } });
 
-const buildKeywordQuery = (keywords: ExtractedKeyword[]): string =>
-  keywords.map(({ phrase }) => phrase).join(' ');
+const normalizeKeywordQueryTerm = (phrase: string): string =>
+  phrase.normalize('NFKC').replace(/\s+/gu, ' ').trim().toLocaleLowerCase();
+
+export const buildKeywordQuery = (keywords: ExtractedKeyword[]): string =>
+  [...new Set(keywords
+    .map(({ phrase }) => normalizeKeywordQueryTerm(phrase))
+    .filter((phrase) => phrase.length > 0))]
+    .join(' ');
+
+const createTypeSafeClient = (config: AppConfig): TypeSafeClient | undefined => {
+  if (!config.typesafeApiKey) return undefined;
+  return new TypeSafeClient({
+    apiKey: config.typesafeApiKey,
+    defaultModel: JEV_MODEL,
+  });
+};
 
 const createSemanticRanker = (config: AppConfig, injected?: SemanticRanker): SemanticRanker | undefined => {
   if (injected) return injected;
-  if (!config.typesafeApiKey) return undefined;
-  return new JevSemanticRanker(new TypeSafeJevClient(new TypeSafeClient({
-    apiKey: config.typesafeApiKey,
-    defaultModel: JEV_MODEL,
-  })));
+  const client = createTypeSafeClient(config);
+  return client ? new JevSemanticRanker(new TypeSafeJevClient(client)) : undefined;
 };
+
+const createConstraintInferer = (config: AppConfig, injected?: ConstraintInferer): ConstraintInferer | undefined => {
+  if (injected) return injected;
+  const client = createTypeSafeClient(config);
+  return client ? new JevConstraintInferer(new TypeSafeJevClient(client), config.jevConstraintThreshold) : undefined;
+};
+
+const buildExplicitConstraints = (fromYear: number | undefined): SearchConstraint[] =>
+  fromYear === undefined ? [] : [{
+    type: 'publication_year',
+    value: String(fromYear),
+    label: `Since ${fromYear}`,
+    applied: true,
+    source: 'explicit',
+    status: 'applied',
+    evidence: 'Selected in the publication date control.',
+  }];
 
 export interface ServerDependencies {
   client?: OpenAlexClient;
   semanticRanker?: SemanticRanker;
+  constraintInferer?: ConstraintInferer;
   keywordExtractor?: KeywordExtractor;
   config?: AppConfig;
 }
@@ -61,6 +98,7 @@ export const buildServer = async (dependencies: ServerDependencies = {}): Promis
     maxRetries: config.maxRetries,
   });
   const semanticRanker = createSemanticRanker(config, dependencies.semanticRanker);
+  const constraintInferer = createConstraintInferer(config, dependencies.constraintInferer);
   const keywordExtractor = dependencies.keywordExtractor ?? new KeyBertKeywordExtractor();
 
   await server.register(cors, { origin: config.corsOrigin === '*' ? true : config.corsOrigin.split(',').map((origin) => origin.trim()) });
@@ -72,17 +110,54 @@ export const buildServer = async (dependencies: ServerDependencies = {}): Promis
     if (!parsed.success) {
       return reply.code(400).send(errorBody('INVALID_QUERY', parsed.error.issues.map((issue) => issue.message).join(' ')));
     }
+
     try {
       const rankingPreference = parsed.data.filter || undefined;
       if (rankingPreference && !semanticRanker) {
         return reply.code(503).send(errorBody('TYPESAFE_NOT_CONFIGURED', 'AI reranking is not configured on the search service.'));
       }
 
+      let interpretation = unavailableInterpretation(
+        config.jevConstraintThreshold ?? JEV_CONSTRAINT_THRESHOLD,
+        constraintInferer ? undefined : 'Jev constraint inference is not configured.',
+      );
+      if (constraintInferer) {
+        try {
+          interpretation = await constraintInferer.infer(parsed.data.q);
+        } catch (error) {
+          request.log.error(error);
+          interpretation = unavailableInterpretation(
+            config.jevConstraintThreshold ?? JEV_CONSTRAINT_THRESHOLD,
+            'Constraint inference was unavailable for this search.',
+          );
+        }
+      }
+
+      const composed = composeOpenAlexFilters({
+        inferred: interpretation.constraints,
+        explicit: buildExplicitConstraints(parsed.data.fromYear),
+        threshold: interpretation.threshold,
+      });
+      const effectiveFilter = [
+        'primary_location.source.is_core:true',
+        parsed.data.fromYear === undefined ? undefined : `from_publication_date:${parsed.data.fromYear}-01-01`,
+        composed.filter,
+      ].filter((value): value is string => Boolean(value)).join(',');
+      interpretation = {
+        ...interpretation,
+        constraints: composed.constraints,
+        effectiveFilter,
+      };
+
       let extractedKeywords: ExtractedKeyword[] = [];
       let openAlexQuery = parsed.data.q;
       if (rankingPreference) {
         try {
-          extractedKeywords = selectSearchKeywords(await keywordExtractor.extract(rankingPreference));
+          extractedKeywords = selectSearchKeywords(
+            await keywordExtractor.extract(rankingPreference),
+            undefined,
+            rankingPreference,
+          );
         } catch (error) {
           request.log.error(error);
           return reply.code(502).send(errorBody('KEYWORD_EXTRACTION_FAILED', 'Keywords could not be extracted.'));
@@ -94,11 +169,15 @@ export const buildServer = async (dependencies: ServerDependencies = {}): Promis
       }
 
       console.log('OpenAlex search query:', openAlexQuery);
-      const response = await client.search(openAlexQuery, {
+
+      const searchOptions = {
         limit: rankingPreference ? 100 : parsed.data.limit,
         fromPublicationYear: parsed.data.fromYear,
-      });
-      if (!rankingPreference) return response;
+        ...(composed.filter ? { filter: composed.filter } : {}),
+      };
+      const response = await client.search(openAlexQuery, searchOptions);
+      if (!rankingPreference) return { ...response, interpretation };
+
       try {
         const rankedResults = await semanticRanker!.rank(response.results, parsed.data.q, rankingPreference);
         return {
@@ -106,6 +185,7 @@ export const buildServer = async (dependencies: ServerDependencies = {}): Promis
           returnedResults: rankedResults.length,
           results: rankedResults,
           extractedKeywords,
+          interpretation,
         };
       } catch (error) {
         const status = typeof error === 'object'

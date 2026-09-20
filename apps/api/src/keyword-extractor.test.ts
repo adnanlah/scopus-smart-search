@@ -22,17 +22,14 @@ const createBackend = (load: TransformerPipelineBackend['load']): TransformerPip
 });
 
 describe('generateKeywordCandidates', () => {
-  it('normalizes text and returns one-to-two-word candidates', () => {
+  it('normalizes text and returns one-word candidates', () => {
     expect(generateKeywordCandidates('Human evaluations of Retrieval-Augmented Generation!')).toEqual([
       'human',
-      'human evaluations',
       'evaluations',
       'retrieval-augmented',
-      'retrieval-augmented generation',
       'generation',
     ]);
   });
-
   it('removes stop words and numeric candidates without joining phrases across them', () => {
     expect(generateKeywordCandidates('The quality of 12 studies and their results.')).toEqual([
       'quality',
@@ -41,14 +38,22 @@ describe('generateKeywordCandidates', () => {
     ]);
   });
 
-  it('generates the review-papers phrase from a natural research request', () => {
+  it('keeps review as a candidate from a natural research request', () => {
     const candidates = generateKeywordCandidates(
       'review papers about meta-learning paradigm to solve medical images being scarce',
     );
 
-    expect(candidates).toContain('review papers');
+    expect(candidates).toContain('review');
   });
 
+  it('keeps data as a keyword when it carries domain meaning', () => {
+    const selected = selectSearchKeywords([
+      { phrase: 'data', score: 0.8 },
+      { phrase: 'scarcity', score: 0.7 },
+    ]);
+
+    expect(selected.map(({ phrase }) => phrase)).toContain('data');
+  });
   it('prioritizes repeated candidates, deduplicates them, and caps the pool', () => {
     const uniqueWords = Array.from({ length: 300 }, (_, index) => `term${index}`).join(', ');
     const candidates = generateKeywordCandidates(`relevance relevance relevance. ${uniqueWords}`);
@@ -60,7 +65,7 @@ describe('generateKeywordCandidates', () => {
 });
 
 describe('selectSearchKeywords', () => {
-  it('sorts by relevance, removes generic and plural duplicates, and keeps the top ten', () => {
+  it('sorts by relevance, removes generic and plural duplicates, keeps review, and keeps the top ten', () => {
     const keywords = [
       { phrase: 'papers', score: 0.99 },
       { phrase: 'image', score: 0.7 },
@@ -75,10 +80,19 @@ describe('selectSearchKeywords', () => {
     expect(selected[0]).toEqual({ phrase: 'images', score: 0.95 });
     expect(selected.map(({ phrase }) => phrase)).not.toContain('image');
     expect(selected.map(({ phrase }) => phrase)).not.toContain('papers');
-    expect(selected.map(({ phrase }) => phrase)).not.toContain('reviews');
+    expect(selected.map(({ phrase }) => phrase)).toContain('reviews');
     expect(selected.map(({ score }) => score)).toEqual([...selected.map(({ score }) => score)].sort((a, b) => b - a));
   });
 
+  it('orders selected keywords by their original position when a source query is provided', () => {
+    const selected = selectSearchKeywords([
+      { phrase: 'models', score: 0.99 },
+      { phrase: 'images', score: 0.95 },
+      { phrase: 'meta-learning', score: 0.9 },
+    ], 10, 'meta-learning for medical images using foundation models');
+
+    expect(selected.map(({ phrase }) => phrase)).toEqual(['meta-learning', 'images', 'models']);
+  });
   it('removes lower-ranked terms contained by a stronger phrase', () => {
     const selected = selectSearchKeywords([
       { phrase: 'Medical Images', score: 0.95 },
@@ -88,7 +102,7 @@ describe('selectSearchKeywords', () => {
       { phrase: 'models', score: 0.75 },
     ]);
 
-    expect(selected.map(({ phrase }) => phrase)).toEqual(['medical images', 'foundation models']);
+    expect(selected.map(({ phrase }) => phrase)).toEqual(['images', 'medical', 'models']);
   });
 
   it('prefers longer phrases on score ties and canonicalizes punctuation and plurals', () => {
@@ -101,7 +115,7 @@ describe('selectSearchKeywords', () => {
       { phrase: 'images', score: 0.6 },
     ]);
 
-    expect(selected.map(({ phrase }) => phrase)).toEqual(['meta-learning', 'image']);
+    expect(selected.map(({ phrase }) => phrase)).toEqual(['meta', 'meta-learning', 'learning', 'image']);
   });
 
   it('keeps distinct partially overlapping phrases', () => {
@@ -110,7 +124,7 @@ describe('selectSearchKeywords', () => {
       { phrase: 'deep learning', score: 0.85 },
     ]);
 
-    expect(selected.map(({ phrase }) => phrase)).toEqual(['machine learning', 'deep learning']);
+    expect(selected.map(({ phrase }) => phrase)).toEqual([]);
   });
 
   it('allows relevant generic phrases but removes weak ones and generic standalone terms', () => {
@@ -122,7 +136,7 @@ describe('selectSearchKeywords', () => {
       { phrase: 'foundation models', score: 0.85 },
     ]);
 
-    expect(selected.map(({ phrase }) => phrase)).toEqual(['foundation models', 'review papers']);
+    expect(selected.map(({ phrase }) => phrase)).toEqual(['review']);
   });
 
   it('allows relevant unseen phrases containing generic terms without special cases', () => {
@@ -133,7 +147,7 @@ describe('selectSearchKeywords', () => {
       { phrase: 'articles', score: 0.69 },
     ]);
 
-    expect(selected.map(({ phrase }) => phrase)).toEqual(['clinical studies', 'survey articles']);
+    expect(selected.map(({ phrase }) => phrase)).toEqual([]);
   });
 });
 
@@ -157,7 +171,7 @@ describe('KeyBertKeywordExtractor', () => {
     expect(embed).toHaveBeenCalledOnce();
     expect(result).toHaveLength(10);
     expect(result[0]).toMatchObject({ phrase: 'alpha' });
-    expect(result.every(({ phrase, score }) => phrase.split(' ').length <= 2 && Number.isFinite(score))).toBe(true);
+    expect(result.every(({ phrase, score }) => phrase.split(' ').length <= 1 && Number.isFinite(score))).toBe(true);
     expect(result.map(({ score }) => score)).toEqual([...result.map(({ score }) => score)].sort((a, b) => b - a));
   });
 });

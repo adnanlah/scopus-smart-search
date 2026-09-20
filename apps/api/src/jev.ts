@@ -26,7 +26,7 @@ interface JevEvaluation {
 
 interface JevRequest {
   model: string;
-  state: JevState;
+  state: EntryType;
   questions: Questions;
 }
 
@@ -99,11 +99,11 @@ export class JevSemanticRanker implements SemanticRanker {
       async (work, index) => {
         const response = await this.client.systemOne({
           model: JEV_MODEL,
-          state: {
+          state: ({
             research_topic: researchTopic,
             ranking_preference: rankingPreference,
             paper: buildJevPaperState(work),
-          },
+          } as unknown as EntryType),
           questions: { is_useful_match: buildMatchQuestion() },
         });
         const score = readNoulScore(response.answers.is_useful_match, index);

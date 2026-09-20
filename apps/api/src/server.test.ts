@@ -145,7 +145,7 @@ describe('API server', () => {
     });
 
     expect(result.statusCode).toBe(200);
-    expect(client.search).toHaveBeenCalledWith('human medical images evaluations', {
+    expect(client.search).toHaveBeenCalledWith('review human medical images evaluations', {
       limit: 100,
       fromPublicationYear: 2022,
     });
@@ -162,6 +162,7 @@ describe('API server', () => {
       returnedResults: 1,
       results: [{ semanticScore: 0.87 }],
       extractedKeywords: [
+        { phrase: 'review', score: 0.99 },
         { phrase: 'human', score: 0.91 },
         { phrase: 'medical', score: 0.88 },
         { phrase: 'images', score: 0.85 },

@@ -13,12 +13,12 @@ TypeScript monorepo for searching OpenAlex works and presenting their available 
 ```powershell
 pnpm install
 Copy-Item apps/api/.env.example apps/api/.env
-# Set TYPESAFE_API_KEY in apps/api/.env to enable optional Jev semantic reranking.
+# Set TYPESAFE_API_KEY in apps/api/.env to enable Jev query-constraint inference and optional semantic reranking.
 # Optionally edit apps/api/.env and set OPENALEX_API_KEY
 pnpm dev
 ```
 
-The API environment belongs to `apps/api`. Keep `OPENALEX_API_KEY` and `TYPESAFE_API_KEY` server-side and do not expose them through frontend variables such as `VITE_*`. OpenAlex also supports anonymous API requests. When an AI ranking preference is provided through the backward-compatible `filter` parameter, the API scores the first 100 OpenAlex works individually with Jev and returns every candidate sorted by match probability.
+The API environment belongs to `apps/api`. When Jev is configured, the search route infers supported OpenAlex constraints from the research query. High-confidence work types, domains, fields, languages, and open-access intent are applied to the OpenAlex `filter` request; the UI shows the applied and rejected interpretations. Set `JEV_CONSTRAINT_THRESHOLD` (default `0.8`) to change the application threshold. Keep `OPENALEX_API_KEY` and `TYPESAFE_API_KEY` server-side and do not expose them through frontend variables such as `VITE_*`. OpenAlex also supports anonymous API requests. When an AI ranking preference is provided through the backward-compatible `filter` parameter, the API scores the first 100 OpenAlex works individually with Jev and returns every candidate sorted by match probability.
 
 The API starts on `http://localhost:3000` by default. Start the Vite frontend in a second terminal with:
 

@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { PaperRow } from '@/components/paper-row';
 import { PaperRowSkeleton } from '@/components/paper-row-skeleton';
+import { ConstraintInspector } from '@/components/constraint-inspector';
 
 const getErrorMessage = (error: Error) => {
   if (error instanceof ApiError && error.status === 429) return 'A search provider is rate limiting requests. Please wait a moment and try again.';
@@ -196,6 +197,10 @@ export const App = () => {
                 {!isUpdating && resultSummary}
               </div>
             </div>
+
+            {!searchQuery.isPlaceholderData && searchQuery.data?.interpretation && (
+              <ConstraintInspector interpretation={searchQuery.data.interpretation} />
+            )}
 
             {!searchQuery.isPlaceholderData && searchQuery.data && searchQuery.data.extractedKeywords.length > 0 && (
               <div className="space-y-2" aria-labelledby="extracted-keywords-heading">

@@ -91,6 +91,41 @@ export interface ExtractedKeyword {
   score: number;
 }
 
+export type SearchConstraintType =
+  | 'work_type'
+  | 'domain'
+  | 'field'
+  | 'language'
+  | 'open_access'
+  | 'publication_year';
+
+export type SearchConstraintStatus =
+  | 'applied'
+  | 'below_threshold'
+  | 'ambiguous'
+  | 'shadowed_by_explicit'
+  | 'unsupported'
+  | 'unknown';
+
+export interface SearchConstraint {
+  type: SearchConstraintType;
+  value: string;
+  label: string;
+  confidence?: number;
+  applied: boolean;
+  source: 'explicit' | 'inferred';
+  openAlexFilter?: string;
+  status: SearchConstraintStatus;
+  evidence?: string;
+}
+
+export interface SearchInterpretation {
+  threshold: number;
+  available: boolean;
+  error?: string;
+  constraints: SearchConstraint[];
+  effectiveFilter?: string;
+}
 export interface SearchResponse {
   query: string;
   requestedLimit: number;
@@ -98,6 +133,7 @@ export interface SearchResponse {
   returnedResults: number;
   results: WorkResult[];
   extractedKeywords: ExtractedKeyword[];
+  interpretation?: SearchInterpretation;
   errors: SearchError[];
   quota?: QuotaInfo;
 }

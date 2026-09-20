@@ -15,6 +15,7 @@ export interface OpenAlexClientOptions {
 export interface OpenAlexSearchOptions {
   limit?: number;
   fromPublicationYear?: number;
+  filter?: string;
 }
 
 interface ResponseMetadata {
@@ -133,6 +134,7 @@ export class OpenAlexClient {
     };
     const filters = ['primary_location.source.is_core:true'];
     if (options.fromPublicationYear !== undefined) filters.push(`from_publication_date:${options.fromPublicationYear}-01-01`);
+    if (options.filter) filters.push(options.filter);
     searchParams.filter = filters.join(',');
     const response = await this.request<{ meta?: { count?: number }; results?: unknown[] }>('/works', searchParams);
     const results = (response.data.results ?? []).map((work, index) => parseWork(work, index + 1));

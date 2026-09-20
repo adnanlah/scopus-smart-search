@@ -6,14 +6,15 @@ const DEFAULT_MODEL = 'Xenova/all-MiniLM-L6-v2';
 const MODEL_DTYPE = 'q8';
 const QUANTIZED_MODEL_FILE = 'model_quantized.onnx';
 const MAX_CANDIDATES = 256;
-const MAX_NGRAM_SIZE = 2;
+const MAX_KEYWORD_WORDS = 1;
+const MAX_NGRAM_SIZE = MAX_KEYWORD_WORDS;
 const TOP_KEYWORDS = 10;
 const GENERIC_PHRASE_MIN_SCORE = 0.4;
 const TOKEN_PATTERN = /[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu;
 
 const GENERIC_SEARCH_TERMS = new Set([
-  'article', 'author', 'data', 'finding', 'literature', 'method', 'paper',
-  'research', 'result', 'review', 'study', 'use', 'using', 'want', 'work',
+  'article', 'author', 'finding', 'literature', 'method', 'paper',
+  'research', 'result', 'study', 'use', 'using', 'want', 'work',
 ]);
 
 const ENGLISH_STOP_WORDS = new Set([
@@ -137,7 +138,7 @@ const singularizeKeyword = (keyword: string): string => {
 
 const canonicalKeywordTokens = (phrase: string): string[] =>
   normalizeKeyword(phrase)
-    .match(/[\p{L}\p{N}]+/gu)
+    .match(TOKEN_PATTERN)
     ?.map(singularizeKeyword) ?? [];
 
 const containsAllTokens = (container: Set<string>, tokens: string[]): boolean =>
@@ -146,16 +147,17 @@ const containsAllTokens = (container: Set<string>, tokens: string[]): boolean =>
 export const selectSearchKeywords = (
   keywords: ExtractedKeyword[],
   limit = TOP_KEYWORDS,
+  sourceQuery?: string,
 ): ExtractedKeyword[] => {
   const seen = new Set<string>();
   const selectedTokenSets: Set<string>[] = [];
 
-  return keywords
+  const selected = keywords
     .map(({ phrase, score }) => {
       const normalizedPhrase = normalizeKeyword(phrase);
       return { phrase: normalizedPhrase, score, tokens: canonicalKeywordTokens(normalizedPhrase) };
     })
-    .filter(({ phrase, score, tokens }) => phrase.length > 0 && Number.isFinite(score) && tokens.length > 0)
+    .filter(({ phrase, score, tokens }) => phrase.length > 0 && Number.isFinite(score) && tokens.length > 0 && tokens.length <= MAX_KEYWORD_WORDS)
     .sort((left, right) => right.score - left.score || right.tokens.length - left.tokens.length)
     .filter(({ score, tokens }) => {
       const identity = tokens.join(' ');
@@ -177,6 +179,21 @@ export const selectSearchKeywords = (
     })
     .map(({ phrase, score }) => ({ phrase, score }))
     .slice(0, Math.max(0, limit));
+
+  if (!sourceQuery) return selected;
+
+  const sourcePositions = new Map<string, number>();
+  const normalizedSourceQuery = normalizeKeyword(sourceQuery);
+  for (const match of normalizedSourceQuery.matchAll(TOKEN_PATTERN)) {
+    const token = singularizeKeyword(match[0]);
+    if (!sourcePositions.has(token)) sourcePositions.set(token, match.index ?? Number.MAX_SAFE_INTEGER);
+  }
+
+  return selected.sort((left, right) => {
+    const leftPosition = sourcePositions.get((canonicalKeywordTokens(left.phrase)[0] ?? '')) ?? Number.MAX_SAFE_INTEGER;
+    const rightPosition = sourcePositions.get((canonicalKeywordTokens(right.phrase)[0] ?? '')) ?? Number.MAX_SAFE_INTEGER;
+    return leftPosition - rightPosition || right.score - left.score;
+  });
 };
 
 class HuggingFaceTransformerBackend implements TransformerPipelineBackend {
