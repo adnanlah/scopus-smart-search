@@ -18,6 +18,17 @@ Copy-Item apps/api/.env.example apps/api/.env
 pnpm dev
 ```
 
+## Local SJR journal rankings
+
+The API reads journal-quality data from `apps/api/data/journal-rankings.json` and never queries Scopus or SCImago during search. Generate that file from a SCImago SJR export with ISSN or ISSN-L and SJR quartile data. The importer preserves an explicit metric-year column when present, or infers the release year from the export filename/header (for example, `scimagojr 2025.csv`):
+
+```powershell
+pnpm --filter @openalex/api import:journal-rankings -- `
+  --sjr-export D:\Downloads\scimagojr 2025.csv
+```
+
+The search UI supports `Any journal`, `Q1`, `Q1–Q2`, `Ranked journals only`, and `Include unranked journals`. Matching uses ISSN-L and ISSN/EISSN identifiers; journal titles are not used as join keys. SCImago rows with a `-` quartile are treated as unranked and omitted from the ranking records. Set `JOURNAL_RANKINGS_PATH` to use a generated dataset at another local path.
+
 The API environment belongs to `apps/api`. When Jev is configured, the search route infers supported OpenAlex constraints from the research query. High-confidence work types, domains, fields, languages, and open-access intent are applied to the OpenAlex `filter` request; the UI shows the applied and rejected interpretations. Set `JEV_CONSTRAINT_THRESHOLD` (default `0.8`) to change the application threshold. Keep `OPENALEX_API_KEY` and `TYPESAFE_API_KEY` server-side and do not expose them through frontend variables such as `VITE_*`. OpenAlex also supports anonymous API requests. When an AI ranking preference is provided through the backward-compatible `filter` parameter, the API retrieves up to 1,000 OpenAlex works across 10 sequential 100-result pages, scores them individually with Jev, and returns every candidate sorted by match probability. Change `JEV_CANDIDATE_PAGE_COUNT` in `apps/api/src/server.ts` to adjust the candidate-page count.
 
 The API starts on `http://localhost:3000` by default. Start the Vite frontend in a second terminal with:

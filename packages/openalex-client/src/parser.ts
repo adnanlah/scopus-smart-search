@@ -123,6 +123,10 @@ export const parseWork = (value: unknown, rank: number): WorkResult => {
   const oaUrl = cleanString(openAccess.oa_url);
   const landingPageUrl = cleanString(primaryLocation.landing_page_url);
   const pdfUrl = cleanString(primaryLocation.pdf_url);
+  const sourceIssns = asArray(source.issn)
+    .map(cleanString)
+    .filter((issn): issn is string => Boolean(issn));
+  const issnL = cleanString(source.issn_l);
   const links: Record<string, string> = {};
   if (openAlexId) links.openalex = openAlexId;
   if (doi) links.doi = `https://doi.org/${doi}`;
@@ -153,7 +157,9 @@ export const parseWork = (value: unknown, rank: number): WorkResult => {
       pageRange: parsePageRange(asRecord(work.biblio)),
       coverDate: cleanString(work.publication_date),
       publicationDate: cleanString(work.publication_date),
-      issn: cleanString(source.issn_l ?? asArray(source.issn).find((value) => typeof value === 'string')),
+      issn: issnL ?? sourceIssns[0],
+      issnL,
+      ...(sourceIssns.length > 0 ? { issns: sourceIssns } : {}),
       publisher: cleanString(source.host_organization_name),
     },
     identifiers: { doi, pubmedId: pmid, pmcid },

@@ -36,8 +36,20 @@ export const PaperRow = memo(({ paper, isExpanded = false, onToggleExpanded }: P
     paper.issue ? `Issue ${paper.issue}` : undefined,
     paper.pageRange ? `pp. ${paper.pageRange}` : undefined,
   ].filter((value): value is string => Boolean(value));
+  const journalRankingLabel = paper.journalRanking?.status === 'unranked'
+    ? 'Unranked'
+    : paper.journalRanking?.quartile
+      ? [
+        paper.journalRanking.quartile,
+        paper.journalRanking.sjr === undefined ? undefined : `SJR ${paper.journalRanking.sjr}`,
+        paper.journalRanking.metricYear === undefined ? undefined : String(paper.journalRanking.metricYear),
+      ].filter((value): value is string => Boolean(value)).join(' · ')
+      : undefined;
+  const sourceTypeBadge = paper.sourceType
+    ? [formatBadge(paper.sourceType), journalRankingLabel].filter((value): value is string => Boolean(value)).join(' · ')
+    : journalRankingLabel;
   const sourceBadges = [
-    paper.sourceType ? formatBadge(paper.sourceType) : undefined,
+    sourceTypeBadge,
     paper.openAccess ? 'Open access' : undefined,
     paper.license ? formatLicense(paper.license) : undefined,
   ].filter((value): value is string => Boolean(value));

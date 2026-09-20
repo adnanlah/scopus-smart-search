@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SearchResponse, WorkResult } from '@openalex/shared';
 import { buildServer } from './server.js';
+import { JournalRankingIndex, parseJournalRankingDataset } from './journal-quality.js';
 
 const work: WorkResult = {
   rank: 1,
@@ -124,6 +125,49 @@ describe('API server', () => {
     expect(client.search).not.toHaveBeenCalled();
   });
 
+  it('filters locally by SJR quartile using OpenAlex source identifiers', async () => {
+    const q1Work: WorkResult = {
+      ...work,
+      publication: { name: 'Q1 Journal', sourceType: 'journal', issnL: '1234-5678', issn: '1234-5678' },
+    };
+    const unrankedWork: WorkResult = {
+      ...work,
+      publication: { name: 'Unranked Journal', sourceType: 'journal', issnL: '1111-1111', issn: '1111-1111' },
+    };
+    const client = { search: vi.fn().mockResolvedValue({ ...response, results: [q1Work, unrankedWork], requestedLimit: 100 }) };
+    const journalRankingIndex = new JournalRankingIndex(parseJournalRankingDataset({
+      version: 1,
+      source: 'test',
+      entries: [{ identifiers: ['1234-5678'], metrics: [{ metricYear: 2024, quartile: 'Q1' }] }],
+    }));
+    server = await buildServer({ client: client as never, journalRankingIndex, config });
+
+    const result = await server.inject({ method: 'GET', url: '/api/search?q=test&journalQuality=q1' });
+
+    expect(result.statusCode).toBe(200);
+    expect(client.search).toHaveBeenCalledWith('test', {
+      limit: 1000,
+      fromPublicationYear: undefined,
+    });
+    expect(result.json()).toMatchObject({
+      returnedResults: 1,
+      eligibleResults: 1,
+      journalQuality: 'q1',
+      results: [{ publication: { name: 'Q1 Journal' }, journalRanking: { status: 'ranked', quartile: 'Q1', metricYear: 2024 } }],
+    });
+  });
+
+  it('rejects unsupported journal quality modes', async () => {
+    const client = { search: vi.fn().mockResolvedValue(response) };
+    server = await buildServer({ client: client as never, config });
+
+    const result = await server.inject({ method: 'GET', url: '/api/search?q=test&journalQuality=top10' });
+
+    expect(result.statusCode).toBe(400);
+    expect(result.json().error.code).toBe('INVALID_QUERY');
+    expect(client.search).not.toHaveBeenCalled();
+  });
+
   it('runs Jev ranking after fetching the full OpenAlex candidate batch', async () => {
     const client = { search: vi.fn().mockResolvedValue({ ...response, requestedLimit: 100 }) };
     const semanticRanker = { rank: vi.fn().mockResolvedValue([{ ...work, semanticScore: 0.87 }]) };
@@ -160,6 +204,7 @@ describe('API server', () => {
     expect(result.json()).toMatchObject({
       totalResults: 2,
       returnedResults: 1,
+      rankingCandidateCount: 1,
       results: [{ semanticScore: 0.87 }],
       extractedKeywords: [
         { phrase: 'human', score: 0.91 },

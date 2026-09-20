@@ -23,6 +23,11 @@ import {
 } from './constraints.js';
 import { JEV_MODEL, JevSemanticRanker, TypeSafeJevClient, type SemanticRanker } from './jev.js';
 import { KeyBertKeywordExtractor, selectSearchKeywords, type KeywordExtractor } from './keyword-extractor.js';
+import {
+  applyJournalQuality,
+  JournalRankingIndex,
+  loadJournalRankingIndex,
+} from './journal-quality.js';
 
 const searchQuerySchema = z.object({
   q: z.string().trim().min(1, 'Query parameter q is required.').max(2_000, 'Query is too long.'),
@@ -36,6 +41,7 @@ const searchQuerySchema = z.object({
     .optional(),
   fromYear: z.coerce.number().int().min(1800).max(new Date().getFullYear()).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(100),
+  journalQuality: z.enum(['any', 'q1', 'q1-q2', 'ranked', 'include-unranked']).default('any'),
 });
 
 const errorBody = (code: string, message: string) => ({ error: { code, message } });
@@ -89,6 +95,7 @@ export interface ServerDependencies {
   semanticRanker?: SemanticRanker;
   constraintInferer?: ConstraintInferer;
   keywordExtractor?: KeywordExtractor;
+  journalRankingIndex?: JournalRankingIndex;
   config?: AppConfig;
 }
 
@@ -104,6 +111,9 @@ export const buildServer = async (dependencies: ServerDependencies = {}): Promis
   const semanticRanker = createSemanticRanker(config, dependencies.semanticRanker);
   const constraintInferer = createConstraintInferer(config, dependencies.constraintInferer);
   const keywordExtractor = dependencies.keywordExtractor ?? new KeyBertKeywordExtractor();
+  const journalRankingPath = config.journalRankingsPath
+    ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../data/journal-rankings.json');
+  const journalRankingIndex = dependencies.journalRankingIndex ?? loadJournalRankingIndex(journalRankingPath);
 
   await server.register(cors, { origin: config.corsOrigin === '*' ? true : config.corsOrigin.split(',').map((origin) => origin.trim()) });
 
@@ -175,20 +185,37 @@ export const buildServer = async (dependencies: ServerDependencies = {}): Promis
       console.log('OpenAlex search query:', openAlexQuery);
 
       const searchOptions = {
-        limit: rankingPreference ? JEV_CANDIDATE_LIMIT : parsed.data.limit,
+        limit: rankingPreference || parsed.data.journalQuality !== 'any'
+          ? Math.max(JEV_CANDIDATE_LIMIT, parsed.data.limit)
+          : parsed.data.limit,
         fromPublicationYear: parsed.data.fromYear,
         ...(composed.filter ? { filter: composed.filter } : {}),
       };
       const response = await client.search(openAlexQuery, searchOptions);
-      if (!rankingPreference) return { ...response, interpretation };
-
-      try {
-        const rankedResults = await semanticRanker!.rank(response.results, parsed.data.q, rankingPreference);
+      const journalFiltered = applyJournalQuality(response.results, parsed.data.journalQuality, journalRankingIndex);
+      if (!rankingPreference) {
+        const results = journalFiltered.results.slice(0, parsed.data.limit);
         return {
           ...response,
-          returnedResults: rankedResults.length,
-          results: rankedResults,
+          returnedResults: results.length,
+          results,
+          ...(journalFiltered.eligibleResults === undefined ? {} : { eligibleResults: journalFiltered.eligibleResults }),
+          journalQuality: parsed.data.journalQuality,
+          interpretation,
+        };
+      }
+
+      try {
+        const rankedResults = await semanticRanker!.rank(journalFiltered.results, parsed.data.q, rankingPreference);
+        const results = rankedResults.slice(0, parsed.data.limit);
+        return {
+          ...response,
+          returnedResults: results.length,
+          results,
           extractedKeywords,
+          rankingCandidateCount: journalFiltered.results.length,
+          ...(journalFiltered.eligibleResults === undefined ? {} : { eligibleResults: journalFiltered.eligibleResults }),
+          journalQuality: parsed.data.journalQuality,
           interpretation,
         };
       } catch (error) {

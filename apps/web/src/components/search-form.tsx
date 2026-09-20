@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { SEARCH_MIN_WORDS, countSearchWords } from '@openalex/shared';
+import { SEARCH_MIN_WORDS, countSearchWords, type JournalQuality } from '@openalex/shared';
 import { Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -9,11 +9,13 @@ import { Textarea } from '@/components/ui/textarea';
 interface SearchDraft {
   query: string;
   fromYear: string;
+  journalQuality: JournalQuality;
 }
 
 export interface SubmittedSearchInput {
   query: string;
   fromYear?: number;
+  journalQuality: JournalQuality;
 }
 
 interface SearchFormProps {
@@ -25,6 +27,7 @@ interface SearchFormProps {
 const createEmptySearchDraft = (): SearchDraft => ({
   query: '',
   fromYear: '',
+  journalQuality: 'any',
 });
 
 const buildYearOptions = (currentYear: number) => [
@@ -32,6 +35,14 @@ const buildYearOptions = (currentYear: number) => [
   { value: String(currentYear), label: `Since ${currentYear}` },
   { value: String(currentYear - 1), label: `Since ${currentYear - 1}` },
   { value: String(currentYear - 4), label: `Since ${currentYear - 4}` },
+];
+
+const journalQualityOptions: Array<{ value: JournalQuality; label: string }> = [
+  { value: 'any', label: 'Any journal' },
+  { value: 'q1', label: 'Q1' },
+  { value: 'q1-q2', label: 'Q1–Q2' },
+  { value: 'ranked', label: 'Ranked journals only' },
+  { value: 'include-unranked', label: 'Include unranked journals' },
 ];
 
 export const SearchForm = ({ isFetching, onSubmit, resetKey }: SearchFormProps) => {
@@ -64,6 +75,7 @@ export const SearchForm = ({ isFetching, onSubmit, resetKey }: SearchFormProps) 
     onSubmit({
       query: nextQuery,
       fromYear: draft.fromYear ? Number(draft.fromYear) : undefined,
+      journalQuality: draft.journalQuality,
     });
   };
 
@@ -97,20 +109,37 @@ export const SearchForm = ({ isFetching, onSubmit, resetKey }: SearchFormProps) 
       </div>
 
       <div className="flex flex-col gap-4 pt-1 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-2 sm:w-48">
-          <Label htmlFor="publication-year">Publication date</Label>
-          <Select
-            id="publication-year"
-            value={draft.fromYear}
-            onChange={(event) => setDraft((current) => ({
-              ...current,
-              fromYear: event.target.value,
-            }))}
-          >
-            {yearOptions.map((option) => (
-              <option key={option.value || 'any'} value={option.value}>{option.label}</option>
-            ))}
-          </Select>
+        <div className="grid flex-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-2 sm:max-w-52">
+            <Label htmlFor="journal-quality">SJR quartile</Label>
+            <Select
+              id="journal-quality"
+              value={draft.journalQuality}
+              onChange={(event) => setDraft((current) => ({
+                ...current,
+                journalQuality: event.target.value as JournalQuality,
+              }))}
+            >
+              {journalQualityOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </Select>
+          </div>
+          <div className="space-y-2 sm:max-w-52">
+            <Label htmlFor="publication-year">Publication date</Label>
+            <Select
+              id="publication-year"
+              value={draft.fromYear}
+              onChange={(event) => setDraft((current) => ({
+                ...current,
+                fromYear: event.target.value,
+              }))}
+            >
+              {yearOptions.map((option) => (
+                <option key={option.value || 'any'} value={option.value}>{option.label}</option>
+              ))}
+            </Select>
+          </div>
         </div>
         <Button type="submit" disabled={isFetching} className="h-10 min-w-28 gap-2">
           {!isFetching && <Search className="h-4 w-4" aria-hidden="true" />}

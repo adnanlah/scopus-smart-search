@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
+    "import:journal-rankings": "tsx scripts/import-journal-rankings.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -19,6 +20,7 @@
     "@typesafe-ai/sdk": "^0.6.0",
     "dotenv": "^16.4.7",
     "fastify": "^5.2.1",
+    "xlsx": "^0.18.5",
     "zod": "^3.24.1"
   }
 }

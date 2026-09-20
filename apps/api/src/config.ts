@@ -15,6 +15,7 @@ const environmentSchema = z.object({
   OPENALEX_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   JEV_CONSTRAINT_THRESHOLD: z.coerce.number().min(0).max(1).default(0.8),
+  JOURNAL_RANKINGS_PATH: optionalEnvironmentString,
 });
 
 export interface AppConfig {
@@ -27,6 +28,7 @@ export interface AppConfig {
   maxRetries: number;
   corsOrigin: string;
   jevConstraintThreshold?: number;
+  journalRankingsPath?: string;
 }
 
 export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppConfig => {
@@ -41,5 +43,6 @@ export const loadConfig = (environment: NodeJS.ProcessEnv = process.env): AppCon
     maxRetries: parsed.OPENALEX_MAX_RETRIES,
     corsOrigin: parsed.CORS_ORIGIN,
     jevConstraintThreshold: parsed.JEV_CONSTRAINT_THRESHOLD,
+    journalRankingsPath: parsed.JOURNAL_RANKINGS_PATH,
   };
 };

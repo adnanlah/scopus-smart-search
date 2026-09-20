@@ -94,6 +94,7 @@ describe('App', () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(makeResponse({
       totalResults: 250,
       returnedResults: 100,
+      rankingCandidateCount: 1000,
       results: papers,
     })), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
@@ -106,7 +107,7 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Climate paper 1' })).toBeInTheDocument();
     expect(screen.getAllByRole('article').length).toBeLessThan(100);
     expect(screen.queryByRole('heading', { name: 'Climate paper 100' })).not.toBeInTheDocument();
-    expect(screen.getByText('100 papers ranked · 250 matches')).toBeInTheDocument();
+    expect(screen.getByText('1,000 papers ranked · 250 matches')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Publication date' })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -183,6 +184,35 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Climate adaptation strategies' })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/search?q=${encodeQueryValue(validResearchDescription)}&limit=100&filter=${encodeQueryValue(validResearchDescription)}&fromYear=${currentYear - 4}`,
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+  });
+
+  it('offers SJR quartile choices and submits the selected quality mode', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(makeResponse({
+      journalQuality: 'q1',
+      eligibleResults: 1,
+      results: [{ ...paper, journalRanking: { status: 'ranked', quartile: 'Q1', sjr: 1.2, metricYear: 2024 } }],
+    })), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp();
+
+    const journalQuality = screen.getByRole('combobox', { name: 'SJR quartile' });
+    expect(screen.getByRole('option', { name: 'Q1' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Q1–Q2' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Ranked journals only' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Top 10%' })).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Describe your research topic'), validResearchDescription);
+    await user.selectOptions(journalQuality, 'q1');
+    await user.click(screen.getByRole('button', { name: 'Search' }));
+
+    expect(await screen.findByRole('heading', { name: 'Climate adaptation strategies' })).toBeInTheDocument();
+    expect(screen.getByText('Journal · Q1 · SJR 1.2 · 2024')).toBeInTheDocument();
+    const encodedDescription = encodeQueryValue(validResearchDescription);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/search?q=${encodedDescription}&limit=100&filter=${encodedDescription}&journalQuality=q1`,
       expect.objectContaining({ signal: expect.anything() }),
     );
   });

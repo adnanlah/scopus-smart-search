@@ -1,9 +1,10 @@
-import type { ExtractedKeyword, SearchError, SearchInterpretation, SearchResponse, WorkResult } from '@openalex/shared';
+import type { ExtractedKeyword, JournalQuality, JournalRanking, SearchError, SearchInterpretation, SearchResponse, WorkResult } from '@openalex/shared';
 
 export interface SearchParams {
   query: string;
   rankingPreference?: string;
   fromYear?: number;
+  journalQuality?: JournalQuality;
 }
 
 export interface Paper {
@@ -25,12 +26,16 @@ export interface Paper {
   openAccess: boolean;
   license?: string;
   semanticScore?: number;
+  journalRanking?: JournalRanking;
 }
 
 export interface PaperSearchResult {
   query: string;
   totalResults: number;
   returnedResults: number;
+  eligibleResults?: number;
+  rankingCandidateCount?: number;
+  journalQuality?: JournalQuality;
   searchErrors: SearchError[];
   extractedKeywords: ExtractedKeyword[];
   interpretation?: SearchInterpretation;
@@ -104,13 +109,15 @@ const toPaper = (result: WorkResult): Paper => ({
   openAccess: result.access.openAccess ?? false,
   license: result.access.license,
   semanticScore: result.semanticScore,
+  journalRanking: result.journalRanking,
 });
 
-export const searchPapers = async ({ query, rankingPreference, fromYear }: SearchParams, signal?: AbortSignal): Promise<PaperSearchResult> => {
+export const searchPapers = async ({ query, rankingPreference, fromYear, journalQuality }: SearchParams, signal?: AbortSignal): Promise<PaperSearchResult> => {
   const params = new URLSearchParams({ q: query.trim(), limit: '100' });
   const trimmedRankingPreference = rankingPreference?.trim();
   if (trimmedRankingPreference) params.set('filter', trimmedRankingPreference);
   if (fromYear !== undefined) params.set('fromYear', String(fromYear));
+  if (journalQuality && journalQuality !== 'any') params.set('journalQuality', journalQuality);
   const response = await fetch(`${API_BASE_URL}/search?${params.toString()}`, { signal });
 
   const body: unknown = await response.json().catch(() => undefined);
@@ -128,6 +135,9 @@ export const searchPapers = async ({ query, rankingPreference, fromYear }: Searc
     query: data.query,
     totalResults: data.totalResults,
     returnedResults: data.returnedResults,
+    eligibleResults: data.eligibleResults,
+    rankingCandidateCount: data.rankingCandidateCount,
+    journalQuality: data.journalQuality,
     searchErrors: data.errors,
     extractedKeywords: data.extractedKeywords ?? [],
     interpretation: data.interpretation,

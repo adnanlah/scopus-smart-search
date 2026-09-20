@@ -18,13 +18,24 @@ const getErrorMessage = (error: Error) => {
 interface SubmittedSearch {
   query: string;
   fromYear?: number;
+  journalQuality: SubmittedSearchInput['journalQuality'];
   requestId: number;
 }
 
-const formatResultSummary = (returnedResults: number, totalResults: number, ranked: boolean): string => {
-  const paperLabel = returnedResults === 1 ? 'paper' : 'papers';
-  const matchLabel = totalResults === 1 ? 'match' : 'matches';
-  return `${returnedResults.toLocaleString()} ${paperLabel}${ranked ? ' ranked' : ''} · ${totalResults.toLocaleString()} ${matchLabel}`;
+const formatResultSummary = (
+  returnedResults: number,
+  totalResults: number,
+  ranked: boolean,
+  eligibleResults?: number,
+  rankingCandidateCount?: number,
+): string => {
+  const resultCount = ranked ? rankingCandidateCount ?? returnedResults : returnedResults;
+  const paperLabel = resultCount === 1 ? 'paper' : 'papers';
+  const count = eligibleResults ?? totalResults;
+  const matchLabel = eligibleResults === undefined
+    ? (count === 1 ? 'match' : 'matches')
+    : (count === 1 ? 'eligible result' : 'eligible results');
+  return `${resultCount.toLocaleString()} ${paperLabel}${ranked ? ' ranked' : ''} · ${count.toLocaleString()} ${matchLabel}`;
 };
 
 export const App = () => {
@@ -50,12 +61,14 @@ export const App = () => {
       'papers',
       submittedSearch?.query,
       submittedSearch?.fromYear,
+      submittedSearch?.journalQuality,
       submittedSearch?.requestId,
     ],
     queryFn: ({ signal }) => searchPapers({
       query: submittedSearch!.query,
       rankingPreference: submittedSearch!.query,
       fromYear: submittedSearch!.fromYear,
+      journalQuality: submittedSearch!.journalQuality,
     }, signal),
     enabled: Boolean(submittedSearch),
     retry: 1,
@@ -70,14 +83,17 @@ export const App = () => {
       searchQuery.data.returnedResults,
       searchQuery.data.totalResults,
       true,
+      searchQuery.data.eligibleResults,
+      searchQuery.data.rankingCandidateCount,
     )
     : undefined;
 
-  const submitSearch = ({ query, fromYear }: SubmittedSearchInput) => {
+  const submitSearch = ({ query, fromYear, journalQuality }: SubmittedSearchInput) => {
     nextRequestIdRef.current += 1;
     setSubmittedSearch({
       query,
       fromYear,
+      journalQuality,
       requestId: nextRequestIdRef.current,
     });
   };

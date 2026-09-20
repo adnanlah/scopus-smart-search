@@ -23,7 +23,7 @@ describe('OpenAlex parser', () => {
         countries: ['US'],
         institutions: [{ id: 'https://openalex.org/I1', display_name: 'Test University', country_code: 'US', geo: { city: 'Test City' } }],
       }],
-      primary_location: { source: { display_name: 'Research Journal', type: 'journal', issn_l: '1234-5678', host_organization_name: 'Research Publisher' }, landing_page_url: 'https://journal.test/work', license: 'cc-by' },
+      primary_location: { source: { display_name: 'Research Journal', type: 'journal', issn_l: '1234-5678', issn: ['1234-5678', '8765-4321'], host_organization_name: 'Research Publisher' }, landing_page_url: 'https://journal.test/work', license: 'cc-by' },
       open_access: { is_oa: true, oa_status: 'gold', oa_url: 'https://repository.test/work' },
       cited_by_count: 12,
       topics: [{
@@ -58,7 +58,7 @@ describe('OpenAlex parser', () => {
         affiliations: ['https://openalex.org/I1'],
       }],
       affiliations: [{ id: 'https://openalex.org/I1', name: 'Test University', city: 'Test City', country: 'US' }],
-      publication: { name: 'Research Journal', sourceType: 'journal', publisher: 'Research Publisher', volume: '12', issueIdentifier: '3', pageRange: '45-61' },
+      publication: { name: 'Research Journal', sourceType: 'journal', publisher: 'Research Publisher', volume: '12', issueIdentifier: '3', pageRange: '45-61', issn: '1234-5678', issnL: '1234-5678', issns: ['1234-5678', '8765-4321'] },
       identifiers: { doi: '10.1234/example', pubmedId: '42', pmcid: 'PMC42' },
       metrics: { citedByCount: 12 },
       access: { openAccess: true, accessType: 'gold', license: 'cc-by' },

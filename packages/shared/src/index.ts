@@ -5,6 +5,17 @@ const SEARCH_WORD_PATTERN = /[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu;
 export const countSearchWords = (value: string): number =>
   value.normalize('NFKC').match(SEARCH_WORD_PATTERN)?.length ?? 0;
 
+export type JournalQuality = 'any' | 'q1' | 'q1-q2' | 'ranked' | 'include-unranked';
+
+export type JournalQuartile = 'Q1' | 'Q2' | 'Q3' | 'Q4';
+
+export interface JournalRanking {
+  status: 'ranked' | 'unranked';
+  quartile?: JournalQuartile;
+  sjr?: number;
+  metricYear?: number;
+}
+
 export interface WorkAuthor {
   id?: string;
   name?: string;
@@ -54,6 +65,8 @@ export interface WorkResult {
     coverDate?: string;
     publicationDate?: string;
     issn?: string;
+    issnL?: string;
+    issns?: string[];
     isbn?: string;
     publisher?: string;
   };
@@ -70,6 +83,7 @@ export interface WorkResult {
     accessType?: string;
     license?: string;
   };
+  journalRanking?: JournalRanking;
   links: Record<string, string>;
   searchMetadata: Record<string, unknown>;
 }
@@ -133,6 +147,9 @@ export interface SearchResponse {
   returnedResults: number;
   results: WorkResult[];
   extractedKeywords: ExtractedKeyword[];
+  eligibleResults?: number;
+  rankingCandidateCount?: number;
+  journalQuality?: JournalQuality;
   interpretation?: SearchInterpretation;
   errors: SearchError[];
   quota?: QuotaInfo;
