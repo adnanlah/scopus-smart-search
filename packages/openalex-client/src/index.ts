@@ -136,7 +136,7 @@ export class OpenAlexClient {
     const searchParams: Record<string, string> = {
       search: query,
       per_page: String(pageSize),
-      select: 'id,display_name,title,doi,type,language,publication_date,publication_year,biblio,abstract_inverted_index,authorships,primary_location,open_access,cited_by_count,topics,keywords,indexed_in,is_retracted,ids',
+      select: 'id,display_name,title,doi,type,language,publication_date,publication_year,biblio,abstract_inverted_index,authorships,primary_location,best_oa_location,locations,open_access,cited_by_count,topics,keywords,indexed_in,is_retracted,ids',
     };
     const filters = ['primary_location.source.is_core:true'];
     if (options.fromPublicationYear !== undefined) filters.push(`from_publication_date:${options.fromPublicationYear}-01-01`);

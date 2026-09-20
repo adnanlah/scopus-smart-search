@@ -28,6 +28,9 @@ describe('OpenAlexClient', () => {
       'indexed_in',
       'is_retracted',
       'cited_by_count',
+      'best_oa_location',
+      'locations',
+      'authorships',
     ]));
     expect(selectedFields).not.toEqual(expect.arrayContaining([
       'citation_normalized_percentile',

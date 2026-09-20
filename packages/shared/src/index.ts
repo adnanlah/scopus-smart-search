@@ -1,4 +1,4 @@
-export const SEARCH_MIN_WORDS = 10;
+export const SEARCH_MIN_WORDS = 7;
 
 const SEARCH_WORD_PATTERN = /[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu;
 
@@ -20,6 +20,7 @@ export interface WorkAuthor {
   id?: string;
   name?: string;
   orcid?: string;
+  links?: Record<string, string>;
   position?: 'first' | 'middle' | 'last';
   corresponding?: boolean;
   countries?: string[];
@@ -28,18 +29,33 @@ export interface WorkAuthor {
 }
 
 export interface WorkTopic {
+  id?: string;
   name: string;
   subfield?: string;
   field?: string;
   domain?: string;
+  links?: Record<string, string>;
 }
 
 export interface WorkAffiliation {
   id?: string;
   name?: string;
+  ror?: string;
   city?: string;
   country?: string;
+  links?: Record<string, string>;
   raw?: Record<string, unknown>;
+}
+
+export interface WorkLocation {
+  sourceName?: string;
+  sourceType?: string;
+  version?: string;
+  landingPageUrl?: string;
+  pdfUrl?: string;
+  isPrimary?: boolean;
+  isOpenAccess?: boolean;
+  links: Record<string, string>;
 }
 
 export interface WorkResult {
@@ -69,11 +85,13 @@ export interface WorkResult {
     issns?: string[];
     isbn?: string;
     publisher?: string;
+    links?: Record<string, string>;
   };
   identifiers: {
     doi?: string;
     pubmedId?: string;
     pmcid?: string;
+    arxiv?: string;
   };
   metrics: {
     citedByCount?: number;
@@ -83,6 +101,7 @@ export interface WorkResult {
     accessType?: string;
     license?: string;
   };
+  locations?: WorkLocation[];
   journalRanking?: JournalRanking;
   links: Record<string, string>;
   searchMetadata: Record<string, unknown>;

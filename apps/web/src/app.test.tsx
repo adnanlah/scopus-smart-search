@@ -9,13 +9,14 @@ const paper = {
   openAlexId: 'https://openalex.org/W1',
   title: 'Climate adaptation strategies',
   abstract: 'A'.repeat(500),
-  authors: [{ name: 'A Researcher', affiliations: [] }],
+  authors: [{ name: 'A Researcher', id: 'https://openalex.org/A1', affiliations: [], links: { openalex: 'https://openalex.org/A1', orcid: 'https://orcid.org/0000-0001' } }],
   affiliations: [],
-  publication: { name: 'Research Journal', sourceType: 'journal', volume: '12', issueIdentifier: '3', pageRange: '45-61', coverDate: '2023-01-01' },
   identifiers: { doi: '10.1000/example' },
   metrics: { citedByCount: 12 },
   access: { openAccess: true, license: 'cc-by' },
   links: { openalex: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/example' },
+  locations: [{ sourceName: 'Research Journal', landingPageUrl: 'https://journal.test/work', pdfUrl: 'https://journal.test/work.pdf', links: { landing_page: 'https://journal.test/work', pdf: 'https://journal.test/work.pdf' } }],
+  publication: { name: 'Research Journal', sourceType: 'journal', volume: '12', issueIdentifier: '3', pageRange: '45-61', coverDate: '2023-01-01', links: { openalex: 'https://openalex.org/S1' } },
   searchMetadata: {},
 };
 
@@ -67,6 +68,10 @@ describe('App', () => {
     expect(screen.getByText('Read full abstract')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /doi: 10.1000\/example/i })).toHaveAttribute('href', 'https://doi.org/10.1000/example');
     expect(screen.getByRole('link', { name: /Open paper/i })).toHaveAttribute('href', 'https://openalex.org/W1');
+    expect(screen.getByRole('link', { name: 'A Researcher' })).toHaveAttribute('href', 'https://openalex.org/A1');
+    await user.click(screen.getByRole('button', { name: 'Explore links' }));
+    expect(screen.getByRole('link', { name: /A Researcher · Orcid/i })).toHaveAttribute('href', 'https://orcid.org/0000-0001');
+    expect(screen.getByRole('link', { name: /Pdf/i })).toHaveAttribute('href', 'https://journal.test/work.pdf');
   });
 
   it('keeps works without abstracts visible without an abstract warning', async () => {
@@ -238,16 +243,16 @@ describe('App', () => {
     expect(screen.getByRole('combobox', { name: 'Publication date' })).toHaveDisplayValue('Any time');
   });
 
-  it('requires at least ten words before submitting', async () => {
+  it('requires at least seven words before submitting', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
     renderApp();
 
-    await user.type(screen.getByLabelText('Describe your research topic'), 'one two three four five six seven eight nine');
+    await user.type(screen.getByLabelText('Describe your research topic'), 'one two three four five six');
     await user.click(screen.getByRole('button', { name: 'Search' }));
 
-    expect(screen.getByText('Enter at least 10 words (9/10).')).toBeInTheDocument();
+    expect(screen.getByText('Enter at least 7 words (6/7).')).toBeInTheDocument();
     expect(screen.getByLabelText('Describe your research topic')).toHaveFocus();
     expect(fetchMock).not.toHaveBeenCalled();
   });

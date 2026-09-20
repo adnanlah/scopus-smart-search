@@ -14,13 +14,14 @@ describe('searchPapers', () => {
         openAlexId: 'https://openalex.org/W1',
         title: 'Graph neural networks',
         abstract: 'An abstract.',
-        authors: [{ name: 'Ada Lovelace', affiliations: [] }],
+        authors: [{ name: 'Ada Lovelace', affiliations: [], links: { openalex: 'https://openalex.org/A1', orcid: 'https://orcid.org/0000-0001', unsafe: 'javascript:alert(1)' } }],
         affiliations: [],
-        publication: { name: 'Research Journal', sourceType: 'journal', volume: '8', issueIdentifier: '2', pageRange: '10-24', coverDate: '2024-05-01' },
+        publication: { name: 'Research Journal', sourceType: 'journal', volume: '8', issueIdentifier: '2', pageRange: '10-24', coverDate: '2024-05-01', links: { openalex: 'https://openalex.org/S1' } },
         identifiers: { doi: '10.1000/example' },
         metrics: { citedByCount: 12 },
         access: { openAccess: true, license: 'cc-by' },
         links: { openalex: 'https://openalex.org/W1' },
+        locations: [{ landingPageUrl: 'https://repository.test/work', pdfUrl: 'javascript:alert(1)', links: { landing_page: 'https://repository.test/work', pdf: 'javascript:alert(1)' } }],
         searchMetadata: {},
         semanticScore: 0.84,
       }],
@@ -30,6 +31,8 @@ describe('searchPapers', () => {
     const result = await searchPapers({ query: '  graph neural networks ' });
     expect(fetch).toHaveBeenCalledWith('/api/search?q=graph+neural+networks&limit=100', expect.objectContaining({ signal: undefined }));
     expect(result.papers[0]).toMatchObject({ rank: 1, title: 'Graph neural networks', year: '2024', sourceType: 'journal', volume: '8', issue: '2', pageRange: '10-24', publicationDate: '2024-05-01', citedByCount: 12, openAccess: true, license: 'cc-by', semanticScore: 0.84 });
+    expect(result.papers[0]?.authors).toEqual([{ name: 'Ada Lovelace', links: { openalex: 'https://openalex.org/A1', orcid: 'https://orcid.org/0000-0001' } }]);
+    expect(result.papers[0]?.locations[0]).toMatchObject({ landingPageUrl: 'https://repository.test/work', pdfUrl: undefined });
     expect(result.searchErrors).toEqual([]);
     expect(result.extractedKeywords).toEqual([{ phrase: 'graph neural networks', score: 0.92 }]);
   });

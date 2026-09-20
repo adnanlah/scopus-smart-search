@@ -21,12 +21,12 @@ const formatLicense = (value: string): string => value.toLowerCase().startsWith(
 
 export const PaperRow = memo(({ paper, isExpanded = false, onToggleExpanded }: PaperRowProps) => {
   const [isCopied, setIsCopied] = useState(false);
+  const [areLinksExpanded, setAreLinksExpanded] = useState(false);
   const abstract = paper.abstract ?? '';
   const canExpandAbstract = abstract.length > ABSTRACT_PREVIEW_LENGTH;
   const visibleAbstract = isExpanded || !canExpandAbstract ? abstract : `${abstract.slice(0, ABSTRACT_PREVIEW_LENGTH).trimEnd()}…`;
-  const authorSummary = paper.authors.length > 0
-    ? `${paper.authors.slice(0, 3).join(', ')}${paper.authors.length > 3 ? ` +${paper.authors.length - 3}` : ''}`
-    : undefined;
+  const visibleAuthors = paper.authors.slice(0, 3);
+  const hiddenAuthorCount = Math.max(0, paper.authors.length - visibleAuthors.length);
   const doiUrl = paper.doi ? `https://doi.org/${paper.doi}` : undefined;
   const semanticScoreLabel = typeof paper.semanticScore === 'number' ? `AI match: ${Math.round(paper.semanticScore * 100)}%` : undefined;
   const sourceDetails = [
@@ -56,6 +56,52 @@ export const PaperRow = memo(({ paper, isExpanded = false, onToggleExpanded }: P
   const citationLabel = typeof paper.citedByCount === 'number'
     ? `${paper.citedByCount.toLocaleString()} citations`
     : undefined;
+
+  const linkGroups = [
+    {
+      label: 'Authors',
+      links: paper.authors.flatMap((author) => Object.entries(author.links).map(([kind, url]) => ({
+        label: `${author.name} · ${formatBadge(kind)}`,
+        url,
+      }))),
+    },
+    {
+      label: 'Affiliations',
+      links: paper.affiliations.flatMap((affiliation) => Object.entries(affiliation.links).map(([kind, url]) => ({
+        label: `${affiliation.name} · ${formatBadge(kind)}`,
+        url,
+      }))),
+    },
+    {
+      label: 'Work identifiers',
+      links: Object.entries(paper.links)
+        .filter(([kind]) => ['openalex', 'doi', 'pubmed', 'pmc', 'arxiv'].includes(kind))
+        .map(([kind, url]) => ({ label: formatBadge(kind), url })),
+    },
+    {
+      label: 'Full text',
+      links: paper.locations.flatMap((location) => Object.entries(location.links)
+        .filter(([kind]) => ['landing_page', 'pdf'].includes(kind))
+        .map(([kind, url]) => ({
+          label: [location.sourceName, formatBadge(kind)].filter(Boolean).join(' · '),
+          url,
+        }))),
+    },
+    {
+      label: 'Publication source',
+      links: Object.entries(paper.publicationLinks).map(([kind, url]) => ({ label: formatBadge(kind), url })),
+    },
+    {
+      label: 'Topics',
+      links: paper.topics.flatMap((topic) => Object.entries(topic.links).map(([kind, url]) => ({
+        label: `${topic.name} · ${formatBadge(kind)}`,
+        url,
+      }))),
+    },
+  ].map((group) => ({
+    ...group,
+    links: [...new Map(group.links.map((link) => [link.url, link])).values()],
+  })).filter((group) => group.links.length > 0);
 
   const copyDoi = async () => {
     if (!paper.doi || !navigator.clipboard) return;
@@ -96,9 +142,21 @@ export const PaperRow = memo(({ paper, isExpanded = false, onToggleExpanded }: P
         </div>
       )}
 
-      {(authorSummary || citationLabel || paper.doi || paper.externalUrl) && (
+      {(paper.authors.length > 0 || citationLabel || paper.doi || paper.externalUrl) && (
         <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          {authorSummary && <p className="min-w-0 max-w-2xl text-xs leading-5 text-muted-foreground">{authorSummary}</p>}
+          {paper.authors.length > 0 && (
+            <p className="min-w-0 max-w-2xl text-xs leading-5 text-muted-foreground">
+              {visibleAuthors.map((author, index) => (
+                <span key={`${author.name}-${index}`}>
+                  {index > 0 && ', '}
+                  {author.links.openalex ? (
+                    <a href={author.links.openalex} target="_blank" rel="noreferrer" className="hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">{author.name}</a>
+                  ) : author.name}
+                </span>
+              ))}
+              {hiddenAuthorCount > 0 && ` +${hiddenAuthorCount}`}
+            </p>
+          )}
           <div className="flex shrink-0 flex-wrap items-center gap-2 sm:ml-auto">
             {citationLabel && (
               <span aria-label={citationLabel} className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground" title={citationLabel}>
@@ -115,6 +173,37 @@ export const PaperRow = memo(({ paper, isExpanded = false, onToggleExpanded }: P
             )}
             {paper.externalUrl && <a href={paper.externalUrl} target="_blank" rel="noreferrer" className="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[11px] font-medium text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">Open paper <ExternalLink className="h-3 w-3" aria-hidden="true" /></a>}
           </div>
+        </div>
+      )}
+      {linkGroups.length > 0 && (
+        <div className="mt-3 border-t pt-3">
+          <button
+            type="button"
+            className="text-xs font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            onClick={() => setAreLinksExpanded((expanded) => !expanded)}
+            aria-expanded={areLinksExpanded}
+            aria-controls={`paper-links-${paper.id}`}
+          >
+            {areLinksExpanded ? 'Hide links' : 'Explore links'}
+          </button>
+          {areLinksExpanded && (
+            <div id={`paper-links-${paper.id}`} className="mt-3 grid gap-3 sm:grid-cols-2" aria-label="Available scholarly links">
+              {linkGroups.map((group) => (
+                <div key={group.label}>
+                  <h4 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{group.label}</h4>
+                  <ul className="mt-1 space-y-1">
+                    {group.links.map((link) => (
+                      <li key={link.url}>
+                        <a href={link.url} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                          <span className="truncate">{link.label}</span><ExternalLink className="h-3 w-3 shrink-0" aria-hidden="true" />
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
       <span className="sr-only" aria-live="polite">{isCopied ? 'DOI copied to clipboard.' : ''}</span>

@@ -7,11 +7,39 @@ export interface SearchParams {
   journalQuality?: JournalQuality;
 }
 
+export interface PaperAuthor {
+  name: string;
+  links: Record<string, string>;
+}
+
+export interface PaperAffiliation {
+  name: string;
+  links: Record<string, string>;
+}
+
+export interface PaperLocation {
+  sourceName?: string;
+  sourceType?: string;
+  version?: string;
+  landingPageUrl?: string;
+  pdfUrl?: string;
+  isPrimary?: boolean;
+  isOpenAccess?: boolean;
+  links: Record<string, string>;
+}
+
+export interface PaperTopic {
+  name: string;
+  links: Record<string, string>;
+}
+
 export interface Paper {
   id: string;
   rank: number;
   title: string;
-  authors: string[];
+  authors: PaperAuthor[];
+  affiliations: PaperAffiliation[];
+  topics: PaperTopic[];
   year?: string;
   venue?: string;
   sourceType?: string;
@@ -27,6 +55,9 @@ export interface Paper {
   license?: string;
   semanticScore?: number;
   journalRanking?: JournalRanking;
+  links: Record<string, string>;
+  publicationLinks: Record<string, string>;
+  locations: PaperLocation[];
 }
 
 export interface PaperSearchResult {
@@ -61,10 +92,16 @@ const cleanAuthorName = (value: unknown): string | undefined => {
   return name || undefined;
 };
 
-const getAuthorNames = (result: WorkResult): string[] =>
+const getSafeLinks = (links: Record<string, string> | undefined): Record<string, string> =>
+  Object.fromEntries(Object.entries(links ?? {}).filter(([, candidate]) => isAllowedExternalUrl(candidate, 'generic')));
+
+const getAuthors = (result: WorkResult): PaperAuthor[] =>
   result.authors
-    .map((author) => cleanAuthorName(author.name))
-    .filter((author): author is string => Boolean(author));
+    .map((author) => {
+      const name = cleanAuthorName(author.name);
+      return name ? { name, links: getSafeLinks(author.links) } : undefined;
+    })
+    .filter((author): author is PaperAuthor => Boolean(author));
 
 const isAllowedExternalUrl = (candidate: string, kind: string): boolean => {
   try {
@@ -94,7 +131,14 @@ const toPaper = (result: WorkResult): Paper => ({
   id: result.openAlexId ?? result.identifiers.doi ?? `rank-${result.rank}`,
   rank: result.rank,
   title: result.title?.trim() || 'Untitled work',
-  authors: getAuthorNames(result),
+  authors: getAuthors(result),
+  affiliations: result.affiliations
+    .map((affiliation) => {
+      const name = cleanAuthorName(affiliation.name);
+      return name ? { name, links: getSafeLinks(affiliation.links) } : undefined;
+    })
+    .filter((affiliation): affiliation is PaperAffiliation => Boolean(affiliation)),
+  topics: (result.topics ?? []).map((topic) => ({ name: topic.name, links: getSafeLinks(topic.links) })),
   year: result.publication.coverDate?.slice(0, 4) ?? result.publication.publicationDate?.slice(0, 4),
   venue: result.publication.name,
   sourceType: result.publication.sourceType,
@@ -104,12 +148,20 @@ const toPaper = (result: WorkResult): Paper => ({
   publicationDate: result.publication.publicationDate ?? result.publication.coverDate,
   abstract: result.abstract?.trim() || undefined,
   doi: result.identifiers.doi,
-  externalUrl: getPublicPaperUrl(result),
+  externalUrl: getPublicPaperUrl({ ...result, links: getSafeLinks(result.links) }),
   citedByCount: result.metrics.citedByCount,
   openAccess: result.access.openAccess ?? false,
   license: result.access.license,
   semanticScore: result.semanticScore,
   journalRanking: result.journalRanking,
+  links: getSafeLinks(result.links),
+  publicationLinks: getSafeLinks(result.publication.links),
+  locations: (result.locations ?? []).map((location) => ({
+    ...location,
+    links: getSafeLinks(location.links),
+    landingPageUrl: location.landingPageUrl && isAllowedExternalUrl(location.landingPageUrl, 'generic') ? location.landingPageUrl : undefined,
+    pdfUrl: location.pdfUrl && isAllowedExternalUrl(location.pdfUrl, 'generic') ? location.pdfUrl : undefined,
+  })),
 });
 
 export const searchPapers = async ({ query, rankingPreference, fromYear, journalQuality }: SearchParams, signal?: AbortSignal): Promise<PaperSearchResult> => {

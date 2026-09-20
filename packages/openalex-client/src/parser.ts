@@ -1,4 +1,4 @@
-import type { WorkAffiliation, WorkAuthor, WorkResult, WorkTopic } from '@openalex/shared';
+import type { WorkAffiliation, WorkAuthor, WorkLocation, WorkResult, WorkTopic } from '@openalex/shared';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -13,6 +13,17 @@ const cleanString = (value: unknown): string | undefined => {
   return result || undefined;
 };
 
+const httpsUrl = (value: unknown): string | undefined => {
+  const candidate = cleanString(value);
+  if (!candidate) return undefined;
+  try {
+    const url = new URL(candidate);
+    return url.protocol === 'https:' ? url.toString().replace(/\/$/, '') : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 const numberValue = (value: unknown): number | undefined => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
   return value;
@@ -24,8 +35,10 @@ const stripIdentifierUrl = (value: unknown): string | undefined => {
   return cleaned
     .replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '')
     .replace(/^https?:\/\/orcid\.org\//i, '')
+    .replace(/^https?:\/\/ror\.org\//i, '')
     .replace(/^https?:\/\/pubmed\.ncbi\.nlm\.nih\.gov\//i, '')
     .replace(/^https?:\/\/www\.ncbi\.nlm\.nih\.gov\/pmc\/articles\//i, '')
+    .replace(/^https?:\/\/arxiv\.org\/(?:abs|pdf)\//i, '')
     .replace(/\/$/, '');
 };
 
@@ -56,10 +69,16 @@ const parseAuthor = (value: unknown): WorkAuthor => {
     .map(cleanString)
     .filter((country): country is string => Boolean(country));
   const position = cleanString(authorship.author_position);
+  const authorId = httpsUrl(author.id);
+  const orcid = stripIdentifierUrl(author.orcid);
+  const links: Record<string, string> = {};
+  if (authorId) links.openalex = authorId;
+  if (orcid) links.orcid = `https://orcid.org/${orcid}`;
   return {
-    id: cleanString(author.id),
+    id: authorId ?? cleanString(author.id),
     name: cleanString(author.display_name),
-    orcid: stripIdentifierUrl(author.orcid),
+    orcid,
+    ...(Object.keys(links).length > 0 ? { links } : {}),
     position: position === 'first' || position === 'middle' || position === 'last' ? position : undefined,
     corresponding: typeof authorship.is_corresponding === 'boolean' ? authorship.is_corresponding : undefined,
     countries: [...new Set(countries)],
@@ -74,15 +93,21 @@ const parseAffiliations = (authorships: unknown[]): WorkAffiliation[] => {
     for (const institutionValue of asArray(asRecord(authorshipValue).institutions)) {
       const institution = asRecord(institutionValue);
       const id = cleanString(institution.id);
+      const ror = stripIdentifierUrl(institution.ror);
       const geo = asRecord(institution.geo);
       const name = cleanString(institution.display_name);
       const key = id ?? name;
       if (!key || affiliations.has(key)) continue;
+      const links: Record<string, string> = {};
+      if (httpsUrl(id)) links.openalex = httpsUrl(id)!;
+      if (ror) links.ror = `https://ror.org/${ror}`;
       affiliations.set(key, {
         id,
         name,
+        ror,
         city: cleanString(geo.city),
         country: cleanString(institution.country_code ?? geo.country_code),
+        ...(Object.keys(links).length > 0 ? { links } : {}),
         raw: institution,
       });
     }
@@ -94,12 +119,69 @@ const parseTopic = (value: unknown): WorkTopic | undefined => {
   const topic = asRecord(value);
   const name = cleanString(topic.display_name);
   if (!name) return undefined;
+  const id = httpsUrl(topic.id);
+  const topicIds = asRecord(topic.ids);
+  const wikipedia = httpsUrl(topicIds.wikipedia ?? topic.wikipedia);
+  const links: Record<string, string> = {};
+  if (id) links.openalex = id;
+  if (wikipedia) links.wikipedia = wikipedia;
   return {
+    ...(id ? { id } : {}),
     name,
     subfield: cleanString(asRecord(topic.subfield).display_name),
     field: cleanString(asRecord(topic.field).display_name),
     domain: cleanString(asRecord(topic.domain).display_name),
+    ...(Object.keys(links).length > 0 ? { links } : {}),
   };
+};
+
+const parseLocation = (value: unknown, isPrimary: boolean): WorkLocation | undefined => {
+  const location = asRecord(value);
+  const source = asRecord(location.source);
+  const landingPageUrl = httpsUrl(location.landing_page_url);
+  const pdfUrl = httpsUrl(location.pdf_url);
+  if (!landingPageUrl && !pdfUrl) return undefined;
+  const links: Record<string, string> = {};
+  if (landingPageUrl) links.landing_page = landingPageUrl;
+  if (pdfUrl) links.pdf = pdfUrl;
+  const sourceId = httpsUrl(source.id);
+  const homepageUrl = httpsUrl(source.homepage_url);
+  if (sourceId) links.source = sourceId;
+  if (homepageUrl) links.source_homepage = homepageUrl;
+  return {
+    sourceName: cleanString(source.display_name),
+    sourceType: cleanString(source.type),
+    version: cleanString(location.version),
+    landingPageUrl,
+    pdfUrl,
+    isPrimary,
+    isOpenAccess: typeof location.is_oa === 'boolean' ? location.is_oa : undefined,
+    links,
+  };
+};
+
+const parseLocations = (work: JsonRecord): WorkLocation[] => {
+  const candidates = [
+    parseLocation(work.primary_location, true),
+    parseLocation(work.best_oa_location, false),
+  ].filter((location): location is WorkLocation => Boolean(location));
+  const unique = new Map<string, WorkLocation>();
+  for (const location of candidates) {
+    const key = location.landingPageUrl ?? location.pdfUrl;
+    if (!key) continue;
+    const existing = unique.get(key);
+    if (!existing) {
+      unique.set(key, location);
+      continue;
+    }
+    unique.set(key, {
+      ...existing,
+      isPrimary: existing.isPrimary || location.isPrimary,
+      isOpenAccess: existing.isOpenAccess || location.isOpenAccess,
+      links: { ...existing.links, ...location.links },
+    });
+  }
+  return [...unique.values()];
 };
 
 const parsePageRange = (biblio: JsonRecord): string | undefined => {
@@ -116,13 +198,14 @@ export const parseWork = (value: unknown, rank: number): WorkResult => {
   const openAccess = asRecord(work.open_access);
   const ids = asRecord(work.ids);
   const authorships = asArray(work.authorships);
-  const openAlexId = cleanString(work.id);
+  const openAlexId = httpsUrl(work.id) ?? cleanString(work.id);
   const doi = stripIdentifierUrl(work.doi ?? ids.doi);
   const pmid = stripIdentifierUrl(ids.pmid);
   const pmcid = stripIdentifierUrl(ids.pmcid);
-  const oaUrl = cleanString(openAccess.oa_url);
-  const landingPageUrl = cleanString(primaryLocation.landing_page_url);
-  const pdfUrl = cleanString(primaryLocation.pdf_url);
+  const arxiv = stripIdentifierUrl(ids.arxiv);
+  const oaUrl = httpsUrl(openAccess.oa_url);
+  const landingPageUrl = httpsUrl(primaryLocation.landing_page_url);
+  const pdfUrl = httpsUrl(primaryLocation.pdf_url);
   const sourceIssns = asArray(source.issn)
     .map(cleanString)
     .filter((issn): issn is string => Boolean(issn));
@@ -130,9 +213,20 @@ export const parseWork = (value: unknown, rank: number): WorkResult => {
   const links: Record<string, string> = {};
   if (openAlexId) links.openalex = openAlexId;
   if (doi) links.doi = `https://doi.org/${doi}`;
+  if (pmid) links.pubmed = `https://pubmed.ncbi.nlm.nih.gov/${pmid}`;
+  if (pmcid) links.pmc = `https://www.ncbi.nlm.nih.gov/pmc/articles/${pmcid}`;
+  if (arxiv) links.arxiv = `https://arxiv.org/abs/${arxiv}`;
   if (oaUrl) links.oa = oaUrl;
   if (landingPageUrl) links.landing_page = landingPageUrl;
   if (pdfUrl) links.pdf = pdfUrl;
+
+  const sourceLinks: Record<string, string> = {};
+  const sourceId = httpsUrl(source.id);
+  const sourceHomepage = httpsUrl(source.homepage_url);
+  const publisherId = httpsUrl(source.host_organization);
+  if (sourceId) sourceLinks.openalex = sourceId;
+  if (sourceHomepage) sourceLinks.homepage = sourceHomepage;
+  if (publisherId) sourceLinks.publisher = publisherId;
 
   return {
     rank,
@@ -161,14 +255,16 @@ export const parseWork = (value: unknown, rank: number): WorkResult => {
       issnL,
       ...(sourceIssns.length > 0 ? { issns: sourceIssns } : {}),
       publisher: cleanString(source.host_organization_name),
+      ...(Object.keys(sourceLinks).length > 0 ? { links: sourceLinks } : {}),
     },
-    identifiers: { doi, pubmedId: pmid, pmcid },
+    identifiers: { doi, pubmedId: pmid, pmcid, arxiv },
     metrics: { citedByCount: numberValue(work.cited_by_count) },
     access: {
       openAccess: typeof openAccess.is_oa === 'boolean' ? openAccess.is_oa : undefined,
       accessType: cleanString(openAccess.oa_status),
       license: cleanString(primaryLocation.license),
     },
+    locations: parseLocations(work),
     links,
     searchMetadata: work,
   };

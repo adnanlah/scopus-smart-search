@@ -21,9 +21,10 @@ describe('OpenAlex parser', () => {
         is_corresponding: true,
         author: { id: 'https://openalex.org/A1', display_name: 'Ada Lovelace', orcid: 'https://orcid.org/0000-0001' },
         countries: ['US'],
-        institutions: [{ id: 'https://openalex.org/I1', display_name: 'Test University', country_code: 'US', geo: { city: 'Test City' } }],
+        institutions: [{ id: 'https://openalex.org/I1', ror: 'https://ror.org/01test', display_name: 'Test University', country_code: 'US', geo: { city: 'Test City' } }],
       }],
-      primary_location: { source: { display_name: 'Research Journal', type: 'journal', issn_l: '1234-5678', issn: ['1234-5678', '8765-4321'], host_organization_name: 'Research Publisher' }, landing_page_url: 'https://journal.test/work', license: 'cc-by' },
+      primary_location: { source: { id: 'https://openalex.org/S1', homepage_url: 'https://journal.test', display_name: 'Research Journal', type: 'journal', issn_l: '1234-5678', issn: ['1234-5678', '8765-4321'], host_organization_name: 'Research Publisher' }, landing_page_url: 'https://journal.test/work', pdf_url: 'https://journal.test/work.pdf', license: 'cc-by' },
+      best_oa_location: { source: { display_name: 'Repository' }, landing_page_url: 'https://repository.test/work', pdf_url: 'https://repository.test/work.pdf', is_oa: true, version: 'acceptedVersion' },
       open_access: { is_oa: true, oa_status: 'gold', oa_url: 'https://repository.test/work' },
       cited_by_count: 12,
       topics: [{
@@ -35,7 +36,7 @@ describe('OpenAlex parser', () => {
       keywords: [{ display_name: 'Machine learning', score: 0.9 }],
       indexed_in: ['crossref', 'pubmed'],
       is_retracted: false,
-      ids: { pmid: 'https://pubmed.ncbi.nlm.nih.gov/42', pmcid: 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC42' },
+      ids: { pmid: 'https://pubmed.ncbi.nlm.nih.gov/42', pmcid: 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC42', arxiv: 'https://arxiv.org/abs/1234.5678' },
     }, 1);
     expect(result).toMatchObject({
       rank: 1,
@@ -56,13 +57,17 @@ describe('OpenAlex parser', () => {
         corresponding: true,
         countries: ['US'],
         affiliations: ['https://openalex.org/I1'],
+        links: { openalex: 'https://openalex.org/A1', orcid: 'https://orcid.org/0000-0001' },
       }],
-      affiliations: [{ id: 'https://openalex.org/I1', name: 'Test University', city: 'Test City', country: 'US' }],
+      affiliations: [{ id: 'https://openalex.org/I1', name: 'Test University', ror: '01test', city: 'Test City', country: 'US', links: { openalex: 'https://openalex.org/I1', ror: 'https://ror.org/01test' } }],
       publication: { name: 'Research Journal', sourceType: 'journal', publisher: 'Research Publisher', volume: '12', issueIdentifier: '3', pageRange: '45-61', issn: '1234-5678', issnL: '1234-5678', issns: ['1234-5678', '8765-4321'] },
-      identifiers: { doi: '10.1234/example', pubmedId: '42', pmcid: 'PMC42' },
+      identifiers: { doi: '10.1234/example', pubmedId: '42', pmcid: 'PMC42', arxiv: '1234.5678' },
       metrics: { citedByCount: 12 },
       access: { openAccess: true, accessType: 'gold', license: 'cc-by' },
     });
-    expect(result.links).toMatchObject({ openalex: 'https://openalex.org/W123', doi: 'https://doi.org/10.1234/example', oa: 'https://repository.test/work' });
+    expect(result.links).toMatchObject({ openalex: 'https://openalex.org/W123', doi: 'https://doi.org/10.1234/example', pubmed: 'https://pubmed.ncbi.nlm.nih.gov/42', pmc: 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC42', arxiv: 'https://arxiv.org/abs/1234.5678', oa: 'https://repository.test/work' });
+    expect(result.publication.links).toMatchObject({ openalex: 'https://openalex.org/S1', homepage: 'https://journal.test' });
+    expect(result.locations).toHaveLength(2);
+    expect(result.locations?.[0]?.links).toMatchObject({ landing_page: 'https://journal.test/work', pdf: 'https://journal.test/work.pdf', source: 'https://openalex.org/S1' });
   });
 });
