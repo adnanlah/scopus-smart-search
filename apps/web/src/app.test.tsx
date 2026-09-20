@@ -84,7 +84,7 @@ describe('App', () => {
     expect(screen.queryByText(/abstract access/i)).not.toBeInTheDocument();
   });
 
-  it('shows the complete returned batch without frontend pagination', async () => {
+  it('keeps the complete returned batch available while virtualizing the DOM', async () => {
     const papers = Array.from({ length: 100 }, (_, index) => ({
       ...paper,
       rank: index + 1,
@@ -104,7 +104,8 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Search' }));
 
     expect(await screen.findByRole('heading', { name: 'Climate paper 1' })).toBeInTheDocument();
-    expect(screen.getAllByRole('article')).toHaveLength(100);
+    expect(screen.getAllByRole('article').length).toBeLessThan(100);
+    expect(screen.queryByRole('heading', { name: 'Climate paper 100' })).not.toBeInTheDocument();
     expect(screen.getByText('100 papers ranked · 250 matches')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Publication date' })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);

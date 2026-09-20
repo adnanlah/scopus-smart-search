@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { ArrowUpRight, Check, Clipboard, ExternalLink, Quote, Sparkles } from 'lucide-react';
 import type { Paper } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 
 interface PaperRowProps {
   paper: Paper;
+  isExpanded?: boolean;
+  onToggleExpanded?: () => void;
 }
 
 const ABSTRACT_PREVIEW_LENGTH = 280;
@@ -17,8 +19,7 @@ const formatLicense = (value: string): string => value.toLowerCase().startsWith(
   ? value.replace(/-/g, ' ').toUpperCase()
   : formatBadge(value);
 
-export const PaperRow = ({ paper }: PaperRowProps) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+export const PaperRow = memo(({ paper, isExpanded = false, onToggleExpanded }: PaperRowProps) => {
   const [isCopied, setIsCopied] = useState(false);
   const abstract = paper.abstract ?? '';
   const canExpandAbstract = abstract.length > ABSTRACT_PREVIEW_LENGTH;
@@ -79,7 +80,7 @@ export const PaperRow = ({ paper }: PaperRowProps) => {
       {paper.abstract && (
         <div className="mt-3 space-y-1.5">
           <p className="text-sm leading-6 text-muted-foreground">{visibleAbstract}</p>
-          {canExpandAbstract && <button type="button" className="text-xs font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" onClick={() => setIsExpanded((expanded) => !expanded)} aria-expanded={isExpanded}>{isExpanded ? 'Show less' : 'Read full abstract'}</button>}
+          {canExpandAbstract && <button type="button" className="text-xs font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" onClick={onToggleExpanded} aria-expanded={isExpanded}>{isExpanded ? 'Show less' : 'Read full abstract'}</button>}
         </div>
       )}
 
@@ -107,4 +108,6 @@ export const PaperRow = ({ paper }: PaperRowProps) => {
       <span className="sr-only" aria-live="polite">{isCopied ? 'DOI copied to clipboard.' : ''}</span>
     </article>
   );
-};
+});
+
+PaperRow.displayName = 'PaperRow';

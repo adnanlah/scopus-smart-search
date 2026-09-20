@@ -1,16 +1,13 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { SEARCH_MIN_WORDS, countSearchWords } from '@openalex/shared';
-import { AlertCircle, ArrowRight, Search } from 'lucide-react';
+import { AlertCircle, ArrowRight, ArrowUp, Search } from 'lucide-react';
 import { ApiError, searchPapers } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { PaperRow } from '@/components/paper-row';
 import { PaperRowSkeleton } from '@/components/paper-row-skeleton';
 import { ConstraintInspector } from '@/components/constraint-inspector';
+import { SearchForm, type SubmittedSearchInput } from '@/components/search-form';
+import { VirtualizedPaperList } from '@/components/virtualized-paper-list';
 
 const getErrorMessage = (error: Error) => {
   if (error instanceof ApiError && error.status === 429) return 'A search provider is rate limiting requests. Please wait a moment and try again.';
@@ -18,28 +15,11 @@ const getErrorMessage = (error: Error) => {
   return error.message;
 };
 
-interface SearchDraft {
-  query: string;
-  fromYear: string;
-}
-
 interface SubmittedSearch {
   query: string;
   fromYear?: number;
   requestId: number;
 }
-
-const createEmptySearchDraft = (): SearchDraft => ({
-  query: '',
-  fromYear: '',
-});
-
-const buildYearOptions = (currentYear: number) => [
-  { value: '', label: 'Any time' },
-  { value: String(currentYear), label: `Since ${currentYear}` },
-  { value: String(currentYear - 1), label: `Since ${currentYear - 1}` },
-  { value: String(currentYear - 4), label: `Since ${currentYear - 4}` },
-];
 
 const formatResultSummary = (returnedResults: number, totalResults: number, ranked: boolean): string => {
   const paperLabel = returnedResults === 1 ? 'paper' : 'papers';
@@ -48,12 +28,22 @@ const formatResultSummary = (returnedResults: number, totalResults: number, rank
 };
 
 export const App = () => {
-  const yearOptions = buildYearOptions(new Date().getFullYear());
-  const [draft, setDraft] = useState<SearchDraft>(createEmptySearchDraft);
   const [submittedSearch, setSubmittedSearch] = useState<SubmittedSearch>();
-  const [showValidation, setShowValidation] = useState(false);
-  const searchInputRef = useRef<HTMLTextAreaElement>(null);
   const nextRequestIdRef = useRef(0);
+  const [resetKey, setResetKey] = useState(0);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  useEffect(() => {
+    const updateScrollTopVisibility = () => setShowScrollTop(window.scrollY > 480);
+    updateScrollTopVisibility();
+    window.addEventListener('scroll', updateScrollTopVisibility, { passive: true });
+    return () => window.removeEventListener('scroll', updateScrollTopVisibility);
+  }, []);
+
+  const scrollToTop = () => {
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({ top: 0, behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+  };
 
   const searchQuery = useQuery({
     queryKey: [
@@ -73,8 +63,6 @@ export const App = () => {
     placeholderData: keepPreviousData,
   });
 
-  const queryWordCount = countSearchWords(draft.query);
-  const isInvalid = queryWordCount < SEARCH_MIN_WORDS;
   const isUpdating = searchQuery.isFetching && !searchQuery.isPending;
   const displayedPapers = searchQuery.data?.papers ?? [];
   const resultSummary = searchQuery.data
@@ -85,28 +73,18 @@ export const App = () => {
     )
     : undefined;
 
-  const submitSearch = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const nextQuery = draft.query.trim();
-    if (countSearchWords(nextQuery) < SEARCH_MIN_WORDS) {
-      setShowValidation(true);
-      searchInputRef.current?.focus();
-      return;
-    }
-    setShowValidation(false);
+  const submitSearch = ({ query, fromYear }: SubmittedSearchInput) => {
     nextRequestIdRef.current += 1;
     setSubmittedSearch({
-      query: nextQuery,
-      fromYear: draft.fromYear ? Number(draft.fromYear) : undefined,
+      query,
+      fromYear,
       requestId: nextRequestIdRef.current,
     });
   };
 
   const resetSearch = () => {
-    setDraft(createEmptySearchDraft());
     setSubmittedSearch(undefined);
-    setShowValidation(false);
-    searchInputRef.current?.focus();
+    setResetKey((current) => current + 1);
   };
 
   const statusText = searchQuery.isPending
@@ -132,55 +110,7 @@ export const App = () => {
             <h2 id="search-heading" className="text-base font-semibold tracking-tight">Start a search</h2>
             <p className="mt-1 text-sm text-muted-foreground">Describe the research you want to find.</p>
           </div>
-          <form onSubmit={submitSearch} className="space-y-4" noValidate>
-            <div className="space-y-2">
-              <Label htmlFor="paper-query">Describe your research topic</Label>
-              <Textarea
-                ref={searchInputRef}
-                id="paper-query"
-                value={draft.query}
-                onChange={(event) => {
-                  setDraft((current) => ({ ...current, query: event.target.value }));
-                  if (showValidation && countSearchWords(event.target.value) >= SEARCH_MIN_WORDS) {
-                    setShowValidation(false);
-                  }
-                }}
-                placeholder="e.g. meta-learning for scarce medical images using foundation models"
-                rows={4}
-                required
-                autoFocus
-                aria-invalid={showValidation && isInvalid}
-                aria-describedby={showValidation && isInvalid ? 'query-error' : undefined}
-              />
-              {showValidation && isInvalid && (
-                <p id="query-error" className="text-xs font-medium text-destructive">
-                  Enter at least {SEARCH_MIN_WORDS} words ({queryWordCount}/{SEARCH_MIN_WORDS}).
-                </p>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-4 pt-1 sm:flex-row sm:items-end sm:justify-between">
-              <div className="space-y-2 sm:w-48">
-                <Label htmlFor="publication-year">Publication date</Label>
-                <Select
-                  id="publication-year"
-                  value={draft.fromYear}
-                  onChange={(event) => setDraft((current) => ({
-                    ...current,
-                    fromYear: event.target.value,
-                  }))}
-                >
-                  {yearOptions.map((option) => (
-                    <option key={option.value || 'any'} value={option.value}>{option.label}</option>
-                  ))}
-                </Select>
-              </div>
-              <Button type="submit" disabled={searchQuery.isFetching} className="h-10 min-w-28 gap-2">
-                {!searchQuery.isFetching && <Search className="h-4 w-4" aria-hidden="true" />}
-                {searchQuery.isFetching ? 'Searching…' : 'Search'}
-              </Button>
-            </div>
-          </form>
+          <SearchForm isFetching={searchQuery.isFetching} onSubmit={submitSearch} resetKey={resetKey} />
         </section>
 
         <div className="sr-only" aria-live="polite">{statusText}</div>
@@ -250,13 +180,24 @@ export const App = () => {
             )}
 
             {searchQuery.isSuccess && searchQuery.data.papers.length > 0 && (
-              <div className="divide-y overflow-hidden rounded-2xl border bg-card">
-                {displayedPapers.map((paper) => <PaperRow key={paper.id} paper={paper} />)}
+              <div className="overflow-hidden rounded-2xl border bg-card">
+                <VirtualizedPaperList papers={displayedPapers} />
               </div>
             )}
           </section>
         )}
       </div>
+      {showScrollTop && (
+        <button
+          type="button"
+          onClick={scrollToTop}
+          aria-label="Scroll to top"
+          title="Scroll to top"
+          className="fixed bottom-5 right-5 z-20 inline-flex h-10 w-10 items-center justify-center rounded-full border bg-card text-foreground shadow-lg transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:bottom-7 sm:right-7"
+        >
+          <ArrowUp className="h-4 w-4" aria-hidden="true" />
+        </button>
+      )}
     </main>
   );
 };

@@ -91,9 +91,10 @@ export const ConstraintInspector = ({ interpretation }: { interpretation?: Searc
             <div className="space-y-2">
               <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                 <Filter className="h-3.5 w-3.5" aria-hidden="true" />
-                Effective filter
+                Effective OpenAlex filter
               </h4>
               <div className="flex flex-wrap gap-2" aria-label="Effective filters">
+                <span className="sr-only">{interpretation.effectiveFilter}</span>
                 {interpretation.effectiveFilter.split(',').map((filter) => (
                   <span key={filter} className="rounded-full border bg-muted px-2.5 py-1 font-mono text-xs text-muted-foreground">
                     {filter}
