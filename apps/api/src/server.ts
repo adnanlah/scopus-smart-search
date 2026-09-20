@@ -39,6 +39,10 @@ const searchQuerySchema = z.object({
 });
 
 const errorBody = (code: string, message: string) => ({ error: { code, message } });
+// Change this single value to adjust how many OpenAlex pages are sent to Jev.
+const JEV_CANDIDATE_PAGE_COUNT = 10;
+const OPENALEX_PAGE_SIZE = 100;
+const JEV_CANDIDATE_LIMIT = JEV_CANDIDATE_PAGE_COUNT * OPENALEX_PAGE_SIZE;
 
 const normalizeKeywordQueryTerm = (phrase: string): string =>
   phrase.normalize('NFKC').replace(/\s+/gu, ' ').trim().toLocaleLowerCase();
@@ -171,7 +175,7 @@ export const buildServer = async (dependencies: ServerDependencies = {}): Promis
       console.log('OpenAlex search query:', openAlexQuery);
 
       const searchOptions = {
-        limit: rankingPreference ? 100 : parsed.data.limit,
+        limit: rankingPreference ? JEV_CANDIDATE_LIMIT : parsed.data.limit,
         fromPublicationYear: parsed.data.fromYear,
         ...(composed.filter ? { filter: composed.filter } : {}),
       };

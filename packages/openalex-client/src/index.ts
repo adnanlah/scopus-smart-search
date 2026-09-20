@@ -18,6 +18,10 @@ export interface OpenAlexSearchOptions {
   filter?: string;
 }
 
+const OPENALEX_MAX_PER_PAGE = 100;
+// Basic page-based paging is supported through the first 10,000 results.
+const OPENALEX_MAX_SEARCH_LIMIT = 10_000;
+
 interface ResponseMetadata {
   quota?: QuotaInfo;
 }
@@ -125,28 +129,49 @@ export class OpenAlexClient {
   }
 
   public async search(query: string, options: OpenAlexSearchOptions = {}): Promise<SearchResponse> {
-    const requestedLimit = Math.min(Math.max(Math.trunc(options.limit ?? 100), 1), 100);
+    const requestedLimit = Math.min(Math.max(Math.trunc(options.limit ?? 100), 1), OPENALEX_MAX_SEARCH_LIMIT);
+    // OpenAlex supports at most 100 results per page. Keep that page size stable
+    // across requests because changing it between pages would change the offset.
+    const pageSize = Math.min(requestedLimit, OPENALEX_MAX_PER_PAGE);
     const searchParams: Record<string, string> = {
       search: query,
-      page: '1',
-      per_page: String(requestedLimit),
+      per_page: String(pageSize),
       select: 'id,display_name,title,doi,type,language,publication_date,publication_year,biblio,abstract_inverted_index,authorships,primary_location,open_access,cited_by_count,topics,keywords,indexed_in,is_retracted,ids',
     };
     const filters = ['primary_location.source.is_core:true'];
     if (options.fromPublicationYear !== undefined) filters.push(`from_publication_date:${options.fromPublicationYear}-01-01`);
     if (options.filter) filters.push(options.filter);
     searchParams.filter = filters.join(',');
-    const response = await this.request<{ meta?: { count?: number }; results?: unknown[] }>('/works', searchParams);
-    const results = (response.data.results ?? []).map((work, index) => parseWork(work, index + 1));
+    const rawResults: unknown[] = [];
+    let totalResults: number | undefined;
+    let quota: QuotaInfo | undefined;
+    const maxPages = Math.ceil(requestedLimit / pageSize);
+
+    for (let page = 1; page <= maxPages && rawResults.length < requestedLimit; page += 1) {
+      const response = await this.request<{ meta?: { count?: number }; results?: unknown[] }>('/works', {
+        ...searchParams,
+        page: String(page),
+      });
+      const pageResults = response.data.results ?? [];
+      if (totalResults === undefined && typeof response.data.meta?.count === 'number') {
+        totalResults = response.data.meta.count;
+      }
+      quota = response.metadata.quota ?? quota;
+      rawResults.push(...pageResults);
+
+      if (pageResults.length === 0 || pageResults.length < pageSize) break;
+    }
+
+    const results = rawResults.slice(0, requestedLimit).map((work, index) => parseWork(work, index + 1));
     return {
       query,
       requestedLimit,
-      totalResults: typeof response.data.meta?.count === 'number' ? response.data.meta.count : results.length,
+      totalResults: totalResults ?? results.length,
       returnedResults: results.length,
       results,
       extractedKeywords: [],
       errors: [],
-      quota: response.metadata.quota,
+      quota,
     };
   }
 }
